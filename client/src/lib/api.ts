@@ -101,3 +101,130 @@ export async function fetchSyncHistory(limit: number = 50): Promise<SyncHistoryR
     const { data } = await api.get<SyncHistoryResponse>(`/dashboard/sync-history?limit=${limit}`);
     return data;
 }
+
+// === API VENTAS (MONETARIO) ===
+
+export interface VentasMes {
+    ano: number;
+    mes: number;
+    label: string;
+    cantidad: number;
+    montoNeto: number;
+}
+
+export interface ProductoVentasRow {
+    producto: {
+        id: number;
+        sku: string;
+        descripcion: string;
+        familia: string;
+    };
+    ventasMeses: VentasMes[];
+    totalMonto: number;
+    totalCantidad: number;
+    promedioMonto: number;
+    promedioCantidad: number;
+    mesActual: {
+        ano: number;
+        mes: number;
+        montoVendido: number;
+        cantidadVendida: number;
+    };
+}
+
+export interface VentasDashboardMeta {
+    mesesConsultados: number;
+    marca: string | null;
+    mesActual: { ano: number; mes: number };
+    columnas: string[];
+    totalProductos: number;
+    totalMontoPeriodo: number;
+    promedioMontoPeriodo: number;
+    generadoEn: string;
+}
+
+export interface VentasDashboardResponse {
+    meta: VentasDashboardMeta;
+    productos: ProductoVentasRow[];
+}
+
+export async function fetchVentasDashboard(meses: number, marca?: string): Promise<VentasDashboardResponse> {
+    const params = new URLSearchParams({ meses: meses.toString() });
+    if (marca) {
+        params.append("marca", marca);
+    }
+    const { data } = await api.get<VentasDashboardResponse>(`/ventas/dashboard?${params}`);
+    return data;
+}
+
+export interface VentasResumenKPIs {
+    totalMonto: number;
+    promedioMensual: number;
+    crecimiento: number;
+    topProducto: {
+        producto: { sku: string; descripcion: string };
+        totalMonto: number;
+        totalCantidad: number;
+    } | null;
+}
+
+export interface VentasMensualesChart {
+    label: string;
+    ano: number;
+    mes: number;
+    montoNeto: number;
+    cantidad: number;
+}
+
+export interface TopProductoChart {
+    producto: { sku: string; descripcion: string };
+    totalMonto: number;
+    totalCantidad: number;
+}
+
+export interface VentasResumenResponse {
+    kpis: VentasResumenKPIs;
+    ventasMensuales: VentasMensualesChart[];
+    topProductos: TopProductoChart[];
+    meta: any;
+}
+
+export async function fetchVentasResumen(meses: number): Promise<VentasResumenResponse> {
+    const { data } = await api.get<VentasResumenResponse>(`/ventas/resumen?meses=${meses}`);
+    return data;
+}
+
+export interface VentasFamiliaRow {
+    familia: string;
+    totalMonto: number;
+    totalCantidad: number;
+}
+
+export interface MarketShareRow {
+    name: string;
+    value: number;
+    percentage: string;
+    [key: string]: any;
+}
+
+export interface RendimientoAnualRow {
+    mes: number;
+    mensual: number;
+    acumulado: number;
+}
+
+export interface GraficosAvanzadosResponse {
+    ventasPorFamilia: VentasFamiliaRow[];
+    marketShare: MarketShareRow[];
+    rendimientoAnual: RendimientoAnualRow[];
+    meta: {
+        ano: number;
+        totalVentaAnual: number;
+    };
+}
+
+export async function fetchGraficosAvanzados(): Promise<GraficosAvanzadosResponse> {
+    const { data } = await api.get<GraficosAvanzadosResponse>("/ventas/graficos-avanzados");
+    return data;
+}
+

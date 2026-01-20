@@ -167,23 +167,26 @@ interface FiltersBarProps {
     totalProductos: number;
     productosVisibles: number;
     className?: string;
+    hideStockStatus?: boolean;
 }
 
-export function FiltersBar({
-    marca,
-    onMarcaChange,
-    meses,
-    onMesesChange,
-    busqueda,
-    onBusquedaChange,
-    ocultarCero,
-    onOcultarCeroChange,
-    estadosSeleccionados,
-    onEstadosChange,
-    totalProductos,
-    productosVisibles,
-    className,
-}: FiltersBarProps) {
+export function FiltersBar(props: FiltersBarProps) {
+    const {
+        marca,
+        onMarcaChange,
+        meses,
+        onMesesChange,
+        busqueda,
+        onBusquedaChange,
+        ocultarCero,
+        onOcultarCeroChange,
+        estadosSeleccionados,
+        onEstadosChange,
+        totalProductos,
+        productosVisibles,
+        className,
+    } = props;
+
     return (
         <div className={cn("bg-white rounded-xl border border-slate-200 p-4 shadow-sm", className)}>
             <div className="flex flex-wrap items-center gap-4">
@@ -220,15 +223,17 @@ export function FiltersBar({
                 </div>
 
                 {/* Estado Multi-Select */}
-                <div className="flex flex-col gap-1">
-                    <label className="text-xs font-medium text-slate-500">
-                        Estado
-                    </label>
-                    <StatusMultiSelect
-                        selected={estadosSeleccionados}
-                        onChange={onEstadosChange}
-                    />
-                </div>
+                {!props.hideStockStatus && (
+                    <div className="flex flex-col gap-1">
+                        <label className="text-xs font-medium text-slate-500">
+                            Estado
+                        </label>
+                        <StatusMultiSelect
+                            selected={props.estadosSeleccionados}
+                            onChange={props.onEstadosChange}
+                        />
+                    </div>
+                )}
 
                 {/* Búsqueda */}
                 <div className="flex flex-col gap-1 flex-1 min-w-[200px] max-w-md">
