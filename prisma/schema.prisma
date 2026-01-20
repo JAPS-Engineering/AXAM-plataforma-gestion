@@ -11,19 +11,27 @@ datasource db {
 }
 
 model Producto {
-  id          Int      @id @default(autoincrement())
-  sku         String   @unique
-  descripcion String
-  familia     String   @default("")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id              Int      @id @default(autoincrement())
+  sku             String   @unique
+  descripcion     String
+  familia         String   @default("")
+  proveedor       String   @default("")           // Nombre/código del proveedor
+  stockMinimo     Float?   @map("stock_minimo") // Umbral para alerta de quiebre (opcional)
+  factorEmpaque   Float    @default(1)   @map("factor_empaque") // Unidades por pallet/caja
+  diasImportacion Int      @default(0)   @map("dias_importacion") // Tiempo de llegada (importados)
+  origen          String   @default("NACIONAL")   // 'NACIONAL' o 'IMPORTADO'
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
-  ventasHistoricas VentaHistorica[]
-  ventasActuales   VentaActual[]
-  pedidos          Pedido[]
+  ventasHistoricas   VentaHistorica[]
+  ventasActuales     VentaActual[]
+  pedidos            Pedido[]
+  ordenCompraItems   OrdenCompraItem[]
 
   @@index([sku])
   @@index([familia])
+  @@index([proveedor])
+  @@index([origen])
   @@map("productos")
 }
 
@@ -94,3 +102,60 @@ model SyncLog {
   @@index([createdAt])
   @@map("sync_logs")
 }
+
+// Configuración global del sistema
+model Configuracion {
+  id          Int      @id @default(autoincrement())
+  clave       String   @unique  // Ej: 'algoritmo_default', 'timeframe_meses'
+  valor       String            // Valor en formato string/JSON
+  descripcion String?           // Descripción del parámetro
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("configuraciones")
+}
+
+// Orden de Compra generada
+model OrdenCompra {
+  id            Int      @id @default(autoincrement())
+  codigo        String   @unique           // Código único de la OC
+  proveedor     String                     // Nombre del proveedor
+  tipo          String   @default("NACIONAL") // 'NACIONAL' o 'IMPORTADO'
+  estado        String   @default("PENDIENTE") // 'PENDIENTE' | 'GENERADA' | 'ENVIADA' | 'RECIBIDA'
+  montoTotal    Float    @default(0) @map("monto_total")
+  moneda        String   @default("CLP")    // 'CLP' o 'USD'
+  observaciones String?
+  fechaEmision  DateTime @default(now()) @map("fecha_emision")
+  fechaEnvio    DateTime? @map("fecha_envio")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  items OrdenCompraItem[]
+
+  @@index([proveedor])
+  @@index([estado])
+  @@index([tipo])
+  @@index([fechaEmision])
+  @@map("ordenes_compra")
+}
+
+// Detalle de productos en una Orden de Compra
+model OrdenCompraItem {
+  id            Int      @id @default(autoincrement())
+  ordenCompraId Int      @map("orden_compra_id")
+  productoId    Int      @map("producto_id")
+  cantidad      Float                      // Cantidad a pedir
+  precioUnit    Float    @default(0) @map("precio_unit") // Precio unitario
+  subtotal      Float    @default(0)       // cantidad * precioUnit
+  observaciones String?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  ordenCompra OrdenCompra @relation(fields: [ordenCompraId], references: [id], onDelete: Cascade)
+  producto    Producto    @relation(fields: [productoId], references: [id], onDelete: Cascade)
+
+  @@unique([ordenCompraId, productoId])
+  @@index([ordenCompraId])
+  @@index([productoId])
+  @@map("orden_compra_items")
+}
+

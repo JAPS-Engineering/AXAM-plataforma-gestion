@@ -32,11 +32,13 @@ const productosRoutes = require('./routes/productos');
 const pedidosRoutes = require('./routes/pedidos');
 const rotacionRoutes = require('./routes/rotacion');
 const dashboardRoutes = require('./routes/dashboard');
+const purchaseRoutes = require('./routes/purchase');
 
 app.use('/api/productos', productosRoutes);
 app.use('/api/pedidos', pedidosRoutes);
 app.use('/api/rotacion', rotacionRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/purchase', purchaseRoutes);
 
 // Ruta de salud
 app.get('/health', (req, res) => {

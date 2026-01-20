@@ -139,6 +139,7 @@ async function getDashboard(req, res) {
             // Datos DB (hasta ayer)
             let cantidadMesActual = ventaActualDB?.cantidadVendida || 0;
             const stockActual = ventaActualDB?.stockActual || 0;
+            const stockMinimo = producto.stockMinimo; // Puede ser null
 
             // Sumar ventas live de HOY
             const ventaHoy = ventasHoyMap.get(producto.sku);
@@ -166,15 +167,29 @@ async function getDashboard(req, res) {
             const promedio = totalCantidad / ventasMeses.length;
 
             // Calcular compra sugerida
-            // Fórmula: Promedio - Stock - Venta del mes actual (DB + Hoy)
-            const compraSugerida = Math.round(promedio - stockActual - cantidadMesActual);
+            // Fórmula base: Promedio - Stock - Venta del mes actual (DB + Hoy)
+            let compraSugerida = Math.round(promedio - stockActual - cantidadMesActual);
+
+            // Si hay stockMinimo configurado, el sugerido debe ser AL MENOS lo que falta para llegar al mínimo
+            // Es decir: max(compraSugerida, stockMinimo - stockActual)
+            if (stockMinimo !== null && stockMinimo > 0) {
+                const faltaParaMinimo = Math.round(stockMinimo - stockActual);
+                if (faltaParaMinimo > 0) {
+                    // Si estamos bajo el mínimo, sugerido debe cubrir al menos esa diferencia
+                    compraSugerida = Math.max(compraSugerida, faltaParaMinimo);
+                }
+            }
+
+            // Determinar si está bajo el mínimo configurado
+            const bajoMinimo = stockMinimo !== null && stockActual < stockMinimo;
 
             return {
                 producto: {
                     id: producto.id,
                     sku: producto.sku,
                     descripcion: producto.descripcion,
-                    familia: producto.familia
+                    familia: producto.familia,
+                    stockMinimo: stockMinimo // Incluir en respuesta
                 },
                 ventasMeses,
                 promedio: parseFloat(promedio.toFixed(2)),
@@ -185,6 +200,7 @@ async function getDashboard(req, res) {
                     stockActual: stockActual
                 },
                 compraSugerida,
+                bajoMinimo, // Flag para el frontend
                 // Mostrar compraRealizar solo si hay un pedido guardado (NO auto-completar)
                 compraRealizar: pedidoActual?.cantidad ?? null
             };

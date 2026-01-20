@@ -18,6 +18,7 @@ export interface ProductoInfo {
     sku: string;
     descripcion: string;
     familia?: string;
+    stockMinimo?: number | null;
 }
 
 export interface MesVenta {
@@ -37,6 +38,7 @@ export interface ProductoDashboard {
     promedio: number;
     compraSugerida: number;
     compraRealizar: number | null;
+    bajoMinimo?: boolean;
 }
 
 export interface DashboardMeta {

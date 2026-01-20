@@ -3,7 +3,8 @@
 import { ProductoDashboard, saveOrders } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { StockBadge } from "./stock-badge";
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 
 interface ProductTableProps {
     productos: ProductoDashboard[];
@@ -11,11 +12,53 @@ interface ProductTableProps {
     onOrderUpdated?: () => void;
 }
 
+type SortDirection = "asc" | "desc" | null;
+type SortColumn = "familia" | "sku" | "descripcion" | "ventaMes" | "stock" | "sugerido" | "aComprar" | `mes_${number}` | null;
+
+interface SortConfig {
+    column: SortColumn;
+    direction: SortDirection;
+}
+
 function formatNumber(num: number | null | undefined): string {
     if (num === null || num === undefined) return "0";
     const n = Number(num);
     if (isNaN(n)) return "0";
     return n.toLocaleString("es-CL");
+}
+
+interface SortButtonProps {
+    column: SortColumn;
+    currentSort: SortConfig;
+    onSort: (column: SortColumn) => void;
+    isNumeric?: boolean;
+}
+
+function SortButton({ column, currentSort, onSort, isNumeric = false }: SortButtonProps) {
+    const isActive = currentSort.column === column;
+    const direction = isActive ? currentSort.direction : null;
+
+    return (
+        <button
+            onClick={() => onSort(column)}
+            className={cn(
+                "ml-1 p-0.5 rounded hover:bg-slate-200/50 transition-colors inline-flex items-center",
+                isActive && "text-blue-600"
+            )}
+            title={isNumeric
+                ? (direction === "desc" ? "Ordenar de menor a mayor" : "Ordenar de mayor a menor")
+                : (direction === "asc" ? "Ordenar Z-A" : "Ordenar A-Z")
+            }
+        >
+            {direction === "asc" ? (
+                <ChevronUp className="h-4 w-4" />
+            ) : direction === "desc" ? (
+                <ChevronDown className="h-4 w-4" />
+            ) : (
+                <ChevronsUpDown className="h-3.5 w-3.5 opacity-40" />
+            )}
+        </button>
+    );
 }
 
 interface EditableCellProps {
@@ -111,10 +154,87 @@ function EditableCell({ productoId, initialValue, onSave }: EditableCellProps) {
 }
 
 export function ProductTable({ productos, columnas, onOrderUpdated }: ProductTableProps) {
+    const [sortConfig, setSortConfig] = useState<SortConfig>({ column: null, direction: null });
+
     const handleSaveOrder = useCallback(async (productoId: number, cantidad: number) => {
         await saveOrders([{ productoId, cantidad }]);
         onOrderUpdated?.();
     }, [onOrderUpdated]);
+
+    const handleSort = useCallback((column: SortColumn) => {
+        setSortConfig((prev) => {
+            if (prev.column === column) {
+                // Cycle: null -> asc -> desc -> null
+                if (prev.direction === null) return { column, direction: "asc" };
+                if (prev.direction === "asc") return { column, direction: "desc" };
+                return { column: null, direction: null };
+            }
+            return { column, direction: "asc" };
+        });
+    }, []);
+
+    // Sorted products
+    const sortedProductos = useMemo(() => {
+        if (!sortConfig.column || !sortConfig.direction) return productos;
+
+        const sorted = [...productos].sort((a, b) => {
+            let aValue: string | number;
+            let bValue: string | number;
+
+            switch (sortConfig.column) {
+                case "familia":
+                    aValue = (a.producto.familia || "").toLowerCase();
+                    bValue = (b.producto.familia || "").toLowerCase();
+                    break;
+                case "sku":
+                    aValue = a.producto.sku.toLowerCase();
+                    bValue = b.producto.sku.toLowerCase();
+                    break;
+                case "descripcion":
+                    aValue = a.producto.descripcion.toLowerCase();
+                    bValue = b.producto.descripcion.toLowerCase();
+                    break;
+                case "ventaMes":
+                    aValue = a.mesActual?.ventaActual || 0;
+                    bValue = b.mesActual?.ventaActual || 0;
+                    break;
+                case "stock":
+                    aValue = a.mesActual?.stockActual || 0;
+                    bValue = b.mesActual?.stockActual || 0;
+                    break;
+                case "sugerido":
+                    aValue = a.compraSugerida || 0;
+                    bValue = b.compraSugerida || 0;
+                    break;
+                case "aComprar":
+                    aValue = a.compraRealizar || 0;
+                    bValue = b.compraRealizar || 0;
+                    break;
+                default:
+                    // Handle mes_X columns
+                    if (sortConfig.column?.startsWith("mes_")) {
+                        const mesIndex = parseInt(sortConfig.column.split("_")[1], 10);
+                        aValue = a.ventasMeses[mesIndex]?.cantidad || 0;
+                        bValue = b.ventasMeses[mesIndex]?.cantidad || 0;
+                    } else {
+                        return 0;
+                    }
+            }
+
+            if (typeof aValue === "string" && typeof bValue === "string") {
+                return sortConfig.direction === "asc"
+                    ? aValue.localeCompare(bValue)
+                    : bValue.localeCompare(aValue);
+            }
+
+            // Numbers: desc = mayor primero
+            return sortConfig.direction === "desc"
+                ? (bValue as number) - (aValue as number)
+                : (aValue as number) - (bValue as number);
+        });
+
+        return sorted;
+    }, [productos, sortConfig]);
 
     if (productos.length === 0) {
         return (
@@ -129,68 +249,110 @@ export function ProductTable({ productos, columnas, onOrderUpdated }: ProductTab
             <table className="w-full text-sm border-collapse">
                 <thead className="sticky top-0 z-30">
                     <tr className="bg-slate-100">
-                        <th className="sticky left-0 z-40 bg-slate-100 px-4 py-3 text-left font-semibold text-slate-700 border-b border-slate-200 min-w-[120px]">
-                            SKU
+                        {/* FAMILIA - Primera columna */}
+                        <th className="sticky left-0 z-40 bg-slate-100 px-4 py-3 text-left font-semibold text-slate-700 border-b border-slate-200 min-w-[100px]">
+                            <div className="flex items-center">
+                                Familia
+                                <SortButton column="familia" currentSort={sortConfig} onSort={handleSort} />
+                            </div>
                         </th>
-                        <th className="sticky left-[120px] z-40 bg-slate-100 px-4 py-3 text-left font-semibold text-slate-700 border-b border-slate-200 min-w-[250px]">
-                            Descripción
+                        {/* SKU */}
+                        <th className="sticky left-[100px] z-40 bg-slate-100 px-4 py-3 text-left font-semibold text-slate-700 border-b border-slate-200 min-w-[120px]">
+                            <div className="flex items-center">
+                                SKU
+                                <SortButton column="sku" currentSort={sortConfig} onSort={handleSort} />
+                            </div>
                         </th>
-                        <th className="px-4 py-3 text-left font-semibold text-slate-700 border-b border-slate-200 min-w-[100px]">
-                            Familia
+                        {/* Descripción */}
+                        <th className="sticky left-[220px] z-40 bg-slate-100 px-4 py-3 text-left font-semibold text-slate-700 border-b border-slate-200 min-w-[250px]">
+                            <div className="flex items-center">
+                                Descripción
+                                <SortButton column="descripcion" currentSort={sortConfig} onSort={handleSort} />
+                            </div>
                         </th>
                         {/* Columnas históricas */}
-                        {columnas.map((col) => (
+                        {columnas.map((col, idx) => (
                             <th
                                 key={col}
                                 className="px-4 py-3 text-right font-semibold text-slate-700 border-b border-slate-200 min-w-[90px]"
                             >
-                                {col}
+                                <div className="flex items-center justify-end">
+                                    {col}
+                                    <SortButton
+                                        column={`mes_${idx}` as SortColumn}
+                                        currentSort={sortConfig}
+                                        onSort={handleSort}
+                                        isNumeric
+                                    />
+                                </div>
                             </th>
                         ))}
                         {/* Mes Actual */}
                         <th className="px-4 py-3 text-right font-semibold text-blue-700 bg-blue-50 border-b border-blue-200 border-l-2 border-l-blue-400 min-w-[100px]">
-                            Venta Mes
+                            <div className="flex items-center justify-end">
+                                Venta Mes
+                                <SortButton column="ventaMes" currentSort={sortConfig} onSort={handleSort} isNumeric />
+                            </div>
                         </th>
                         <th className="px-4 py-3 text-right font-semibold text-blue-700 bg-blue-50 border-b border-blue-200 min-w-[90px]">
-                            Stock
+                            <div className="flex items-center justify-end">
+                                Stock
+                                <SortButton column="stock" currentSort={sortConfig} onSort={handleSort} isNumeric />
+                            </div>
                         </th>
                         <th className="px-4 py-3 text-center font-semibold text-blue-700 bg-blue-50 border-b border-blue-200 min-w-[80px]">
                             Estado
                         </th>
-                        <th className="px-4 py-3 text-right font-semibold text-blue-700 bg-blue-50 border-b border-blue-200 min-w-[110px]">
-                            Sugerido
+                        {/* SUGERIDO - Destacado */}
+                        <th className="px-4 py-3 text-right font-semibold text-emerald-800 bg-emerald-100 border-b border-emerald-300 border-l-2 border-l-emerald-500 min-w-[110px]">
+                            <div className="flex items-center justify-end">
+                                Sugerido
+                                <SortButton column="sugerido" currentSort={sortConfig} onSort={handleSort} isNumeric />
+                            </div>
                         </th>
                         <th className="px-4 py-3 text-right font-semibold text-amber-700 bg-amber-50 border-b border-amber-200 min-w-[110px]">
-                            A Comprar
+                            <div className="flex items-center justify-end">
+                                A Comprar
+                                <SortButton column="aComprar" currentSort={sortConfig} onSort={handleSort} isNumeric />
+                            </div>
                         </th>
                     </tr>
                 </thead>
                 <tbody>
-                    {productos.map((item, idx) => {
+                    {sortedProductos.map((item, idx) => {
                         const compraSugerida = item.compraSugerida || 0;
+                        const bajoMinimo = item.bajoMinimo;
 
                         return (
                             <tr
                                 key={item.producto.id}
                                 className={cn(
-                                    "hover:bg-slate-50 transition-colors",
-                                    idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"
+                                    "transition-colors",
+                                    bajoMinimo
+                                        ? "bg-red-50 hover:bg-red-100"
+                                        : idx % 2 === 0 ? "bg-white hover:bg-slate-50" : "bg-slate-50/50 hover:bg-slate-100"
                                 )}
                             >
+                                {/* FAMILIA - Primera columna */}
                                 <td className={cn(
-                                    "sticky left-0 z-20 px-4 py-2 font-medium text-slate-800 border-b border-slate-100",
-                                    idx % 2 === 0 ? "bg-white" : "bg-slate-50"
+                                    "sticky left-0 z-20 px-4 py-2 text-slate-500 border-b border-slate-100",
+                                    bajoMinimo ? "bg-red-50" : idx % 2 === 0 ? "bg-white" : "bg-slate-50"
+                                )}>
+                                    {item.producto.familia || "-"}
+                                </td>
+                                {/* SKU */}
+                                <td className={cn(
+                                    "sticky left-[100px] z-20 px-4 py-2 font-medium text-slate-800 border-b border-slate-100",
+                                    bajoMinimo ? "bg-red-50" : idx % 2 === 0 ? "bg-white" : "bg-slate-50"
                                 )}>
                                     {item.producto.sku}
                                 </td>
+                                {/* Descripción */}
                                 <td className={cn(
-                                    "sticky left-[120px] z-20 px-4 py-2 text-slate-600 border-b border-slate-100 max-w-[300px] truncate shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]",
-                                    idx % 2 === 0 ? "bg-white" : "bg-slate-50"
+                                    "sticky left-[220px] z-20 px-4 py-2 text-slate-600 border-b border-slate-100 max-w-[300px] truncate shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]",
+                                    bajoMinimo ? "bg-red-50" : idx % 2 === 0 ? "bg-white" : "bg-slate-50"
                                 )}>
                                     {item.producto.descripcion}
-                                </td>
-                                <td className="px-4 py-2 text-slate-500 border-b border-slate-100">
-                                    {item.producto.familia || "-"}
                                 </td>
                                 {/* Ventas históricas */}
                                 {item.ventasMeses.map((mes, i) => (
@@ -215,11 +377,13 @@ export function ProductTable({ productos, columnas, onOrderUpdated }: ProductTab
                                         sugerido={compraSugerida}
                                     />
                                 </td>
+                                {/* SUGERIDO - Destacado */}
                                 <td
                                     className={cn(
-                                        "px-4 py-2 text-right border-b border-blue-100 bg-blue-50/30 tabular-nums font-medium",
-                                        compraSugerida > 0 && "text-green-600",
-                                        compraSugerida < 0 && "text-red-600"
+                                        "px-4 py-2 text-right border-b border-emerald-200 bg-emerald-50 border-l-2 border-l-emerald-500 tabular-nums font-semibold",
+                                        compraSugerida > 0 && "text-emerald-700",
+                                        compraSugerida < 0 && "text-red-600",
+                                        compraSugerida === 0 && "text-slate-500"
                                     )}
                                 >
                                     {formatNumber(compraSugerida)}
@@ -239,3 +403,4 @@ export function ProductTable({ productos, columnas, onOrderUpdated }: ProductTab
         </div>
     );
 }
+

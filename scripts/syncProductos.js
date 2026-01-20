@@ -20,25 +20,25 @@ const ERP_BASE_URL = process.env.ERP_BASE_URL;
 async function getAllProducts() {
     try {
         logInfo('Obteniendo productos de Manager+...');
-        
+
         const headers = await getAuthHeaders();
         const url = `${ERP_BASE_URL}/products/${RUT_EMPRESA}?con_stock=S&con_listaprecios=S&pic=1`;
-        
+
         logInfo(`URL: ${url}`);
-        
+
         const response = await axios.get(url, { headers });
-        
+
         const products = response.data.data || response.data || [];
-        
+
         if (!Array.isArray(products)) {
             if (typeof products === 'object' && products !== null) {
                 return [products];
             }
             return [];
         }
-        
+
         return products;
-        
+
     } catch (error) {
         logError(`Error al obtener productos: ${error.response?.data?.message || error.message}`);
         if (error.response?.data) {
@@ -52,19 +52,19 @@ async function getAllProducts() {
  * Extraer SKU y descripción de un producto
  */
 function extractProductInfo(product) {
-    const sku = product.codigo_prod || 
-                product.cod_producto || 
-                product.codigo || 
-                product.cod || 
-                product.sku || 
-                '';
-    
-    const descripcion = product.nombre || 
-                       product.descripcion || 
-                       product.descrip || 
-                       product.desc || 
-                       '';
-    
+    const sku = product.codigo_prod ||
+        product.cod_producto ||
+        product.codigo ||
+        product.cod ||
+        product.sku ||
+        '';
+
+    const descripcion = product.nombre ||
+        product.descripcion ||
+        product.descrip ||
+        product.desc ||
+        '';
+
     return { sku: sku.trim(), descripcion: descripcion.trim() };
 }
 
@@ -75,7 +75,7 @@ function saveProduct(db, sku, descripcion) {
     if (!sku || !descripcion) {
         return false;
     }
-    
+
     try {
         // Intentar actualizar primero
         const update = db.prepare(`
@@ -83,9 +83,9 @@ function saveProduct(db, sku, descripcion) {
             SET descripcion = ?, updated_at = CURRENT_TIMESTAMP 
             WHERE sku = ?
         `);
-        
+
         const result = update.run(descripcion, sku);
-        
+
         // Si no se actualizó nada, insertar
         if (result.changes === 0) {
             const insert = db.prepare(`
@@ -95,7 +95,7 @@ function saveProduct(db, sku, descripcion) {
             insert.run(sku, descripcion);
             return true; // Nuevo producto
         }
-        
+
         return false; // Producto actualizado
     } catch (error) {
         logError(`Error al guardar producto ${sku}: ${error.message}`);
@@ -108,45 +108,45 @@ function saveProduct(db, sku, descripcion) {
  */
 async function main() {
     logSection('SINCRONIZACIÓN DE PRODUCTOS');
-    
+
     const db = getDatabase();
-    
+
     try {
         // Obtener productos de Manager+
         const products = await getAllProducts();
         logSuccess(`Se encontraron ${products.length} productos en Manager+`);
-        
+
         if (products.length === 0) {
             logWarning('No se encontraron productos. Verifica la conexión y credenciales.');
             return;
         }
-        
+
         // Procesar productos
         logInfo('Procesando productos...\n');
-        
+
         let nuevos = 0;
         let actualizados = 0;
         let omitidos = 0;
-        
+
         for (let i = 0; i < products.length; i++) {
             const product = products[i];
             const { sku, descripcion } = extractProductInfo(product);
-            
+
             if (!sku || !descripcion) {
                 omitidos++;
                 continue;
             }
-            
+
             const esNuevo = saveProduct(db, sku, descripcion);
             if (esNuevo) {
                 nuevos++;
             } else {
                 actualizados++;
             }
-            
+
             logProgress(i + 1, products.length, 'productos');
         }
-        
+
         console.log('\n');
         logSection('RESUMEN');
         logSuccess(`Total procesados: ${products.length}`);
@@ -155,13 +155,13 @@ async function main() {
         if (omitidos > 0) {
             logWarning(`Productos omitidos (sin SKU o descripción): ${omitidos}`);
         }
-        
+
         // Mostrar estadísticas de la BD
         const totalBD = db.prepare('SELECT COUNT(*) as count FROM productos').get();
         logInfo(`Total de productos en base de datos: ${totalBD.count}`);
-        
+
         logSuccess('\n✅ Sincronización de productos completada\n');
-        
+
     } catch (error) {
         logError(`Error en la sincronización: ${error.message}`);
         if (error.stack) {

@@ -10,7 +10,7 @@ import { ProductTable } from "@/components/product-table";
 import { Pagination } from "@/components/pagination";
 import { SyncModal } from "@/components/sync-modal";
 import { useState, useMemo } from "react";
-import { Package, TrendingUp, AlertTriangle, ShoppingCart } from "lucide-react";
+import { Package, TrendingUp, AlertTriangle, ShoppingCart, Download, FileText } from "lucide-react";
 
 export default function DashboardPage() {
   const queryClient = useQueryClient();
@@ -53,6 +53,61 @@ export default function DashboardPage() {
   // Handle manual sync
   const handleSyncProducts = () => {
     setIsSyncModalOpen(true);
+  };
+
+  // Productos con compra registrada (para exportación)
+  const productosParaExportar = useMemo(() => {
+    if (!data?.productos) return [];
+    return data.productos.filter(p => p.compraRealizar && p.compraRealizar > 0);
+  }, [data?.productos]);
+
+  // Funciones de exportación
+  const exportarCSV = async () => {
+    if (!productosParaExportar.length) return;
+
+    const items = productosParaExportar.map(p => ({
+      sku: p.producto.sku,
+      descripcion: p.producto.descripcion,
+      cantidadSugerida: p.compraRealizar
+    }));
+
+    const res = await fetch("/api/purchase/export/csv", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items })
+    });
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `OC_KC_${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportarTorkTxt = async () => {
+    if (!productosParaExportar.length) return;
+
+    const items = productosParaExportar.map(p => ({
+      sku: p.producto.sku,
+      descripcion: p.producto.descripcion,
+      cantidadSugerida: p.compraRealizar
+    }));
+
+    const res = await fetch("/api/purchase/export/tork-txt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items })
+    });
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `OC_Tork_${new Date().toISOString().split("T")[0]}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   // Apply local filters
@@ -136,12 +191,16 @@ export default function DashboardPage() {
       return sugerido >= 0 && prom > 0 && stock / prom < 0.5;
     }).length;
 
+    // Bajo Mínimo: productos con stockMinimo configurado y stock actual por debajo
+    const productosBajoMinimo = todosProductos.filter((p) => p.bajoMinimo === true).length;
+
     const totalCompras = productos.reduce((sum, p) => sum + (p.compraRealizar || 0), 0);
 
     return {
       totalProductos,
       productosConSugerencia,
       productosCriticos,
+      productosBajoMinimo,
       totalCompras,
     };
   }, [productosFiltered, data?.productos]);
@@ -168,7 +227,7 @@ export default function DashboardPage() {
 
         <main className="flex-1 overflow-auto p-6">
           {/* KPI Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
             <KPICard
               title="Total Productos"
               value={kpis.totalProductos}
@@ -189,6 +248,13 @@ export default function DashboardPage() {
               trend={kpis.productosCriticos > 0 ? "down" : "neutral"}
             />
             <KPICard
+              title="Bajo Mínimo"
+              value={kpis.productosBajoMinimo}
+              subtitle={kpis.productosBajoMinimo > 0 ? "Bajo stock mínimo" : "Todos OK"}
+              icon={AlertTriangle}
+              trend={kpis.productosBajoMinimo > 0 ? "down" : "neutral"}
+            />
+            <KPICard
               title="Compras Registradas"
               value={kpis.totalCompras.toLocaleString("es-CL")}
               subtitle="Unidades a pedir"
@@ -196,6 +262,41 @@ export default function DashboardPage() {
               trend="neutral"
             />
           </div>
+
+          {/* Barra de Exportación */}
+          {productosParaExportar.length > 0 && (
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Download className="h-5 w-5 text-slate-600" />
+                  <div>
+                    <p className="font-medium text-slate-900">
+                      {productosParaExportar.length} productos listos para exportar
+                    </p>
+                    <p className="text-sm text-slate-500">
+                      Solo se exportan productos con valor en "A Comprar"
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={exportarCSV}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+                  >
+                    <Download className="h-4 w-4" />
+                    CSV Kimberly Clark
+                  </button>
+                  <button
+                    onClick={exportarTorkTxt}
+                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
+                  >
+                    <FileText className="h-4 w-4" />
+                    TXT Tork
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Filters */}
           <FiltersBar

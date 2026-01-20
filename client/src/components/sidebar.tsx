@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Package2, ChevronLeft, ChevronRight, LayoutDashboard, History } from "lucide-react";
+import { Package2, ChevronLeft, ChevronRight, LayoutDashboard, History, AlertTriangle, ShoppingCart } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -16,6 +16,8 @@ export function Sidebar({ className }: SidebarProps) {
 
     const navItems = [
         { href: "/", label: "Órdenes de Compra", icon: LayoutDashboard },
+        { href: "/compras", label: "Análisis Personalizado", icon: ShoppingCart },
+        { href: "/minimos", label: "Stock Mínimo", icon: AlertTriangle },
         { href: "/historial", label: "Historial de Sync", icon: History },
     ];
 
