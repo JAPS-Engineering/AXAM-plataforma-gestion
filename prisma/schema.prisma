@@ -25,8 +25,14 @@ model Producto {
 
   ventasHistoricas   VentaHistorica[]
   ventasActuales     VentaActual[]
+  comprasHistoricas  CompraHistorica[]
+  stockHistorico     StockHistorico[]
   pedidos            Pedido[]
   ordenCompraItems   OrdenCompraItem[]
+
+  // Campos para análisis de compras
+  precioUltimaCompra Float?   @map("precio_ultima_compra")
+  fechaUltimaCompra  DateTime? @map("fecha_ultima_compra")
 
   @@index([sku])
   @@index([familia])
@@ -159,3 +165,36 @@ model OrdenCompraItem {
   @@map("orden_compra_items")
 }
 
+
+model CompraHistorica {
+  id              Int      @id @default(autoincrement())
+  productoId      Int      @map("producto_id")
+  fecha           DateTime
+  cantidad        Float
+  precioUnitario  Float    @map("precio_unitario")
+  proveedor       String?
+  rutProveedor    String?  @map("rut_proveedor")
+  folio           String?  // Nro Factura
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  producto Producto @relation(fields: [productoId], references: [id], onDelete: Cascade)
+
+  @@index([productoId])
+  @@index([fecha])
+  @@index([proveedor])
+  @@map("compras_historicas")
+}
+
+model StockHistorico {
+  id              Int      @id @default(autoincrement())
+  productoId      Int      @map("producto_id")
+  fecha           DateTime // Fecha del snapshot (se toma a media noche)
+  stock           Float
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  producto Producto @relation(fields: [productoId], references: [id], onDelete: Cascade)
+
+  @@index([productoId])
+  @@index([fecha])
+  @@map("stock_historico")
+}

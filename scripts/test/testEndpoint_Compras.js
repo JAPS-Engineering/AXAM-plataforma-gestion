@@ -1,11 +1,11 @@
 /**
- * Script de prueba para verificar acceso a FACTURAS DE COMPRA (FACE)
- * Objetivo: Obtener historial de compras y Costo de Última Compra.
+ * Script de prueba para verificar FACTURAS DE COMPRA (FACE)
+ * Objetivo: Analizar estructura para Dashboard de Compras y Costos.
  */
 
 require('dotenv').config();
 const axios = require('axios');
-const { format } = require('date-fns');
+const { format, startOfMonth, endOfMonth, subMonths } = require('date-fns');
 const { getAuthHeaders } = require('../../utils/auth');
 const { logSection, logInfo, logError, logSuccess, logWarning } = require('../../utils/logger');
 
@@ -13,83 +13,84 @@ const RUT_EMPRESA = process.env.RUT_EMPRESA;
 const ERP_BASE_URL = process.env.ERP_BASE_URL;
 
 async function main() {
-    logSection('TEST DOCUMENTOS DE COMPRA (FACE)');
+    logSection('TEST FACTURAS DE COMPRA (FACE)');
 
     try {
         const headers = await getAuthHeaders();
-        const fechaHoy = new Date();
-        const fechaInicio = new Date(fechaHoy);
-        fechaInicio.setDate(fechaInicio.getDate() - 60); // Últimos 60 días para asegurar encontrar algo
 
-        const df = format(fechaInicio, 'yyyyMMdd');
-        const dt = format(fechaHoy, 'yyyyMMdd');
+        // Consultar últimos 2 meses para asegurar datos
+        const now = new Date();
+        const start = subMonths(now, 2);
+        const df = format(start, 'yyyyMMdd');
+        const dt = format(now, 'yyyyMMdd');
 
-        // Tipo: FACE (Factura Compra Electrónica)
-        // Nota: A veces las compras están en /documents/C/FACE o simplemente /documents/.../FACE/C (Compras)
-        // En ventas era /documents/.../FAVE/V (Ventas). Probaremos sufijo /C
+        // TIPO: FACE (Factura Compra Electrónica) 
+        // Endpoint: /documents/{rut}/FACE/C/?df=...&dt=... (C = Compra)
+        const tipoDoc = 'FACE';
+        const url = `${ERP_BASE_URL}/documents/${RUT_EMPRESA}/${tipoDoc}/C/?df=${df}&dt=${dt}&details=1`;
 
-        const tipos = ['FACE'];
-        const suffixes = ['/C', '/V', '']; // Probamos variantes por si acaso
+        logInfo(`Consultando ${tipoDoc} (Compras) desde ${df} hasta ${dt}...`);
 
-        for (const tipo of tipos) {
-            for (const suffix of suffixes) {
-                const url = `${ERP_BASE_URL}/documents/${RUT_EMPRESA}/${tipo}${suffix}/?df=${df}&dt=${dt}`;
-                logInfo(`\nProbando URL: ${url}`);
+        const response = await axios.get(url, { headers });
+        const data = response.data.data || response.data || [];
 
-                try {
-                    const response = await axios.get(url, { headers });
-                    const docs = response.data.data || response.data || [];
-
-                    if (Array.isArray(docs) && docs.length > 0) {
-                        logSuccess(`✅ EXITOSO: Se encontraron ${docs.length} documentos ${tipo} en ${suffix}`);
-                        const sample = docs[0];
-                        console.log('Ejemplo Header:', JSON.stringify(sample, null, 2));
-
-                        // Verificamos si podemos sacar detalle para ver PRECIOS
-                        if (sample.details === 1 || sample.detalles || sample.items) {
-                            // Ya viene con detalle?
-                            console.log('  Tiene detalles embebidos.');
-                        } else {
-                            // Intentamos buscar detalle individual
-                            const docNum = sample.docnumreg || sample.id;
-                            logInfo(`  Consultando detalle para doc # ${docNum}...`);
-                            const detailUrl = `${ERP_BASE_URL}/documents/${RUT_EMPRESA}/${tipo}${suffix}/?docnumreg=${docNum}&details=1`;
-                            try {
-                                const detResp = await axios.get(detailUrl, { headers });
-                                const detData = detResp.data.data || detResp.data;
-                                const item = Array.isArray(detData) ? detData[0] : detData;
-
-                                if (item && (item.detalles || item.items)) {
-                                    const lines = item.detalles || item.items;
-                                    logSuccess(`  ✅ Detalle obtenido. ${lines.length} items.`);
-                                    console.log('  Primer Item:', JSON.stringify(lines[0], null, 2));
-
-                                    // Validar campos de costo
-                                    const first = lines[0];
-                                    if (first.precio || first.monto || first.valor) {
-                                        logSuccess(`  ✅ Precio/Costo encontrado en detalle.`);
-                                    }
-                                }
-                            } catch (e) {
-                                logWarning(`  ⚠️ Error al traer detalle: ${e.message}`);
-                            }
-                        }
-                        return; // Terminamos si encontramos uno válido
-                    } else {
-                        logInfo(`  ℹ️  Sin resultados (o formato vacío)`);
-                    }
-                } catch (error) {
-                    if (error.response?.status !== 404) {
-                        // logWarning(`  ❌ Error ${error.response?.status}`);
-                    }
-                }
-            }
+        if (!Array.isArray(data)) {
+            logError("La respuesta no es un array.");
+            return;
         }
 
-        logWarning("⚠️  No se encontraron documentos FACE en ninguna variante probada.");
+        logSuccess(`✅ Se obtuvieron ${data.length} documentos ${tipoDoc}.`);
+
+        if (data.length > 0) {
+            // Analizar el primero con detalles
+            const doc = data[0]; // O buscar uno con detalles si el primero no tiene
+
+            logSection('ESTRUCTURA DOCUMENTO COMPRA (Ejemplo)');
+            console.log(JSON.stringify(doc, null, 2));
+
+            logSection('ANÁLISIS DE DATOS PARA DASHBOARD');
+
+            // 1. Proveedor
+            const rutProv = doc.rut_cliente || doc.rut_proveedor; // A veces en compras se usa rut_cliente como la contraparte
+            const nombreProv = doc.razon_social || doc.nombre_cliente || doc.cliente_proveedor;
+
+            if (rutProv) logSuccess(`✅ Proveedor Detectado: ${nombreProv} (${rutProv})`);
+            else logWarning(`⚠️  No se ve claro el RUT Proveedor en: rut_cliente/rut_proveedor`);
+
+            // 2. Fecha
+            if (doc.fecha_doc) logSuccess(`✅ Fecha Documento: ${doc.fecha_doc}`);
+            else logWarning(`⚠️  Falta fecha_doc`);
+
+            // 3. Detalles / Costos
+            const items = doc.detalles || doc.items || doc.productos || [];
+            if (items.length > 0) {
+                logSuccess(`✅ Tiene detalles: ${items.length} items.`);
+                const item = items[0];
+                console.log('   Ejemplo Item:', JSON.stringify(item, null, 2));
+
+                if (item.precio_unitario !== undefined) {
+                    logSuccess(`   💰 Precio Unitario (Costo): ${item.precio_unitario}`);
+                } else {
+                    logWarning(`   ⚠️  No se ve 'precio_unitario' en el detalle.`);
+                }
+
+                if (item.codigo) {
+                    logSuccess(`   📦 SKU Producto: ${item.codigo}`);
+                }
+            } else {
+                logWarning('⚠️  Documento sin detalles (¿Falta details=1?).');
+            }
+
+        } else {
+            logWarning("⚠️  No hay documentos de compra en este rango.");
+        }
 
     } catch (error) {
-        logError(`Error fatal: ${error.message}`);
+        const msg = (error.response && error.response.data && error.response.data.message) || error.message;
+        logError(`Error: ${msg}`);
+        if (error.response?.status === 404) {
+            logWarning("Nota: 404 puede significar que no hay documentos, o que la URL es incorrecta (¿FACE/C? ¿FACE/V?)");
+        }
     }
 }
 
