@@ -39,8 +39,10 @@ async function authenticateWithERP() {
         return authToken;
 
     } catch (error) {
-        console.error('❌ Error en la autenticación:', error.response?.data || error.message);
-        throw new Error('Error al autenticarse con el ERP: ' + (error.response?.data?.message || error.message));
+        const errorData = error.response && error.response.data;
+        const msg = (errorData && errorData.message) || error.message;
+        console.error('❌ Error en la autenticación:', errorData || error.message);
+        throw new Error('Error al autenticarse con el ERP: ' + msg);
     }
 }
 

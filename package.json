@@ -22,7 +22,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "migrar:prisma": "node scripts/migrarABasePrisma.js",
-    "postinstall": "cd client && npm install",
+    "postinstall": "node scripts/postinstall.js",
     "docker:build": "docker build -t axam-dashboard .",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down"

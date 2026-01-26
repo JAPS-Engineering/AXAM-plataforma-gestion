@@ -59,9 +59,12 @@ async function calculateSuggestedPurchase(sku, options = {}) {
     }
 
     const ventasHistoricas = producto.ventasHistoricas || [];
-    const stockActual = producto.ventasActuales?.[0]?.stockActual || 0;
-    const stockMinimo = producto.stockMinimo;
-    const compraRealizar = producto.pedidos?.[0]?.cantidad ?? null;
+    const ventaActual = (producto.ventasActuales && producto.ventasActuales[0]) || {};
+    const stockActual = ventaActual.stockActual || 0;
+
+    // Obtener pedido pendiente actual
+    const pedido = (producto.pedidos && producto.pedidos[0]) || {};
+    const compraRealizar = pedido.cantidad !== undefined ? pedido.cantidad : null;
 
     // Si no hay ventas históricas, no podemos calcular
     if (ventasHistoricas.length === 0) {
@@ -171,7 +174,8 @@ async function checkStockBreach(sku) {
         return { error: 'Producto no encontrado', sku };
     }
 
-    const stockActual = producto.ventasActuales?.[0]?.stockActual || 0;
+    const ventaActual = (producto.ventasActuales && producto.ventasActuales[0]) || {};
+    const stockActual = ventaActual.stockActual || 0;
     const stockMinimo = producto.stockMinimo;
 
     // Si no tiene mínimo configurado, no hay quiebre
@@ -229,12 +233,15 @@ async function getProductosEnQuiebre(options = {}) {
 
     // Filtrar solo los que están en quiebre
     const productosEnQuiebre = productos.filter(p => {
-        const stockActual = p.ventasActuales?.[0]?.stockActual || 0;
+        const venta = (p.ventasActuales && p.ventasActuales[0]) || {};
+        const stockActual = venta.stockActual || 0;
         return stockActual < p.stockMinimo;
     });
 
     return productosEnQuiebre.map(p => {
-        const stockActual = p.ventasActuales?.[0]?.stockActual || 0;
+        // Stock Actual
+        const venta = (p.ventasActuales && p.ventasActuales[0]) || {};
+        const stockActual = venta.stockActual || 0;
         return {
             id: p.id,
             sku: p.sku,

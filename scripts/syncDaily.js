@@ -19,42 +19,20 @@ const prisma = getPrismaClient();
 /**
  * Sincronizar productos desde el ERP (solo nuevos)
  */
+/**
+ * Sincronizar productos desde el ERP (usando Filtro de Lista 652)
+ */
 async function syncNewProducts() {
-    logSection('SINCRONIZANDO PRODUCTOS');
+    logSection('SINCRONIZANDO PRODUCTOS (CON FILTRO LISTA 652)');
 
     try {
-        const erpProducts = await getAllProducts();
+        // Reutilizamos la lógica centralizada en syncProductos.js
+        // para asegurar que siempre se aplique el filtro de WhiteList
+        const { syncProductsWithFilter } = require('./syncProductos');
+        await syncProductsWithFilter();
 
-        let created = 0;
-        let updated = 0;
-
-        for (const product of erpProducts) {
-            const sku = product.codigo_prod;
-            const descripcion = product.nombre || product.descripcion || '';
-            const familia = product.familia || '';
-
-            if (!sku) continue;
-
-            const existing = await prisma.producto.findUnique({
-                where: { sku }
-            });
-
-            if (!existing) {
-                await prisma.producto.create({
-                    data: { sku, descripcion, familia }
-                });
-                created++;
-            } else if (existing.descripcion !== descripcion || existing.familia !== familia) {
-                await prisma.producto.update({
-                    where: { sku },
-                    data: { descripcion, familia }
-                });
-                updated++;
-            }
-        }
-
-        logSuccess(`Productos: ${created} creados, ${updated} actualizados`);
-        return { created, updated };
+        // Retornamos dummy stats porque syncProductos ya loguea su propio detalle
+        return { created: 0, updated: 0 };
 
     } catch (error) {
         logError(`Error sincronizando productos: ${error.message}`);

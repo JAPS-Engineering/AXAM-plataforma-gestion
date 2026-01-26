@@ -53,12 +53,12 @@ function extractStockFromProduct(product) {
 
     // El campo stock puede venir como array de arrays o directamente array de objetos
     const stockEntries = product.stock;
-    
+
     if (!stockEntries) {
         logWarning(`Producto sin campo stock: ${product.codigo_prod || product.cod_producto || 'sin SKU'}`);
         return 0;
     }
-    
+
     if (!Array.isArray(stockEntries)) {
         logWarning(`Campo stock no es array para producto: ${product.codigo_prod || product.cod_producto || 'sin SKU'}, tipo: ${typeof stockEntries}`);
         return 0;
@@ -71,11 +71,11 @@ function extractStockFromProduct(product) {
 
     const processItem = (item) => {
         if (!item || typeof item !== 'object') return;
-        
+
         const isGeneral = isGeneralWarehouse(item);
         const saldo = item.saldo || 0;
         const saldoNum = parseFloat(saldo) || 0;
-        
+
         if (isGeneral && saldoNum > 0) {
             stock += saldoNum;
         }
@@ -103,10 +103,10 @@ function extractStockFromProduct(product) {
 async function getManagerProductBySKU(sku) {
     try {
         const headers = await getAuthHeaders();
-        
+
         // Usar el endpoint de productos con con_stock=S para obtener el stock
         const url = `${ERP_BASE_URL}/products/${RUT_EMPRESA}/${sku}/`;
-        
+
         const response = await axios.get(url, {
             headers,
             params: {
@@ -115,17 +115,17 @@ async function getManagerProductBySKU(sku) {
         });
 
         const productData = response.data.data || response.data;
-        
+
         if (!productData || (Array.isArray(productData) && productData.length === 0)) {
             return null;
         }
 
         // Si es un array, tomar el primer elemento
         const product = Array.isArray(productData) ? productData[0] : productData;
-        
+
         // Extraer el stock del campo "stock" (array de arrays con campo "saldo")
         const stock = extractStockFromProduct(product);
-        
+
         return {
             sku: product.codigo_prod || product.cod_producto || product.codigo || sku,
             nombre: product.nombre || product.descripcion || product.descrip || '',
@@ -134,23 +134,25 @@ async function getManagerProductBySKU(sku) {
             precio: product.precio || product.precio_unit || 0,
             rawData: product
         };
-        
+
     } catch (error) {
-        if (error.response?.status === 404) {
+        const status = (error.response && error.response.status) || 0;
+        if (status === 404) {
             return null; // Producto no encontrado
         }
-        
+
         // Detectar rate limiting
-        if (error.response?.status === 429) {
+        if (status === 429) {
             throw new Error(`Rate limit alcanzado en Manager+ (429). Reduce la concurrencia.`);
         }
-        
+
         // Detectar errores de servidor (puede ser sobrecarga)
-        if (error.response?.status >= 500) {
-            throw new Error(`Error del servidor Manager+ (${error.response.status}). Puede estar sobrecargado.`);
+        if (status >= 500) {
+            throw new Error(`Error del servidor Manager+ (${status}). Puede estar sobrecargado.`);
         }
-        
-        logError(`Error al obtener stock de ${sku} de Manager+: ${error.response?.data?.message || error.message}`);
+
+        const errorMsg = (error.response && error.response.data && error.response.data.message) || error.message;
+        logError(`Error al obtener stock de ${sku} de Manager+: ${errorMsg}`);
         throw error;
     }
 }
@@ -168,13 +170,13 @@ async function getStocksBySKUs(skus, options = {}) {
     const { concurrency = 5, delay = 1000 } = options;
     const stocks = {};
     const errors = {};
-    
+
     logInfo(`Obteniendo stock de ${skus.length} productos...`);
-    
+
     // Procesar en lotes para evitar sobrecargar el servidor
     for (let i = 0; i < skus.length; i += concurrency) {
         const batch = skus.slice(i, i + concurrency);
-        
+
         const promises = batch.map(async (sku) => {
             try {
                 const product = await getManagerProductBySKU(sku);
@@ -188,21 +190,21 @@ async function getStocksBySKUs(skus, options = {}) {
                 logWarning(`Error al obtener stock de ${sku}: ${error.message}`);
             }
         });
-        
+
         await Promise.all(promises);
-        
+
         // Delay entre lotes para evitar rate limiting
         if (i + concurrency < skus.length) {
             await new Promise(resolve => setTimeout(resolve, delay));
         }
-        
+
         logInfo(`Procesados ${Math.min(i + concurrency, skus.length)}/${skus.length} productos`);
     }
-    
+
     if (Object.keys(errors).length > 0) {
         logWarning(`Errores al obtener stock: ${Object.keys(errors).length} productos`);
     }
-    
+
     return { stocks, errors };
 }
 
@@ -217,17 +219,17 @@ async function getStocksBySKUs(skus, options = {}) {
  */
 async function getAllStocks(options = {}) {
     const { includeNames = false } = options;
-    
+
     try {
         logInfo('Obteniendo todos los productos con stock de Manager+...');
-        
+
         const headers = await getAuthHeaders();
         const url = `${ERP_BASE_URL}/products/${RUT_EMPRESA}?con_stock=S`;
-        
+
         const response = await axios.get(url, { headers });
-        
+
         let products = response.data.data || response.data || [];
-        
+
         // Normalizar a array si es necesario
         if (!Array.isArray(products)) {
             if (typeof products === 'object' && products !== null) {
@@ -236,57 +238,58 @@ async function getAllStocks(options = {}) {
                 products = [];
             }
         }
-        
+
         const stocks = {};
         const names = {};
         let procesados = 0;
-        
+
         logInfo(`Procesando stock de ${products.length} productos...`);
-        
+
         for (const product of products) {
-            const sku = product.codigo_prod || 
-                       product.cod_producto || 
-                       product.codigo || 
-                       product.cod || 
-                       product.sku || 
-                       '';
-            
+            const sku = product.codigo_prod ||
+                product.cod_producto ||
+                product.codigo ||
+                product.cod ||
+                product.sku ||
+                '';
+
             if (sku) {
                 const trimmedSku = sku.trim();
                 const stock = extractStockFromProduct(product);
-                
+
                 // Log detallado para primeros productos y productos con stock
                 if (procesados < 5 || stock > 0) {
                     logInfo(`  SKU: ${trimmedSku}, Stock extraído: ${stock}, Stock raw: ${JSON.stringify(product.stock)?.substring(0, 100)}`);
                 }
-                
+
                 stocks[trimmedSku] = stock;
-                
+
                 if (includeNames) {
-                    const nombre = product.nombre || 
-                                  product.descripcion || 
-                                  product.descrip || 
-                                  trimmedSku;
+                    const nombre = product.nombre ||
+                        product.descripcion ||
+                        product.descrip ||
+                        trimmedSku;
                     names[trimmedSku] = nombre;
                 }
-                
+
                 procesados++;
             } else {
                 logWarning(`Producto sin SKU válido: ${JSON.stringify(product).substring(0, 100)}`);
             }
         }
-        
+
         const productosConStock = Object.values(stocks).filter(s => s > 0).length;
         logInfo(`Stock extraído de ${procesados} productos (${productosConStock} con stock > 0)`);
-        
+
         if (includeNames) {
             return { stocks, names };
         }
-        
+
         return stocks;
-        
+
     } catch (error) {
-        logError(`Error al obtener stocks: ${error.response?.data?.message || error.message}`);
+        const errorMsg = (error.response && error.response.data && error.response.data.message) || error.message;
+        logError(`Error al obtener stocks: ${errorMsg}`);
         throw error;
     }
 }
@@ -305,7 +308,7 @@ async function saveStockToDatabase(sku, stock, nombre = null) {
     try {
         const stockNum = parseFloat(stock) || 0;
         const trimmedSku = sku.trim();
-        
+
         // Buscar o crear el producto
         const producto = await prisma.producto.upsert({
             where: { sku: trimmedSku },
@@ -374,26 +377,26 @@ async function saveStocksToDatabase(stocks, productNames = {}, options = {}) {
         details: []
     };
 
-        logInfo(`Guardando stocks de ${results.total} productos en la base de datos...`);
-        logInfo(`  Concurrencia: ${concurrency}`);
-        logInfo(`  Productos con nombres: ${Object.keys(productNames).length}`);
+    logInfo(`Guardando stocks de ${results.total} productos en la base de datos...`);
+    logInfo(`  Concurrencia: ${concurrency}`);
+    logInfo(`  Productos con nombres: ${Object.keys(productNames).length}`);
 
     // Procesar en lotes para evitar sobrecargar la base de datos
     const skus = Object.keys(stocks);
     const productosConStock = skus.filter(sku => (stocks[sku] || 0) > 0);
     logInfo(`  Productos con stock > 0: ${productosConStock.length}`);
-    
+
     for (let i = 0; i < skus.length; i += concurrency) {
         const batch = skus.slice(i, i + concurrency);
-        
+
         const promises = batch.map(async (sku) => {
             const stock = stocks[sku];
             const nombre = productNames[sku] || null;
             return await saveStockToDatabase(sku, stock, nombre);
         });
-        
+
         const batchResults = await Promise.all(promises);
-        
+
         batchResults.forEach(result => {
             results.details.push(result);
             if (result.success) {
@@ -402,7 +405,7 @@ async function saveStocksToDatabase(stocks, productNames = {}, options = {}) {
                 results.errors++;
             }
         });
-        
+
         const procesados = Math.min(i + concurrency, skus.length);
         const porcentaje = ((procesados / skus.length) * 100).toFixed(1);
         logInfo(`  Procesados ${procesados}/${skus.length} productos (${porcentaje}%) - Guardados: ${results.saved}, Errores: ${results.errors}`);
@@ -425,14 +428,14 @@ async function saveStocksToDatabase(stocks, productNames = {}, options = {}) {
 async function syncAndSaveAllStocks(options = {}) {
     try {
         logInfo('Iniciando sincronización completa de stocks desde Manager+...');
-        
+
         // Obtener todos los stocks desde Manager+ (con nombres si está habilitado)
         const { includeNames = true } = options;
         const result = await getAllStocks({ includeNames });
-        
+
         const stocks = result.stocks || result;
         const productNames = result.names || {};
-        
+
         if (Object.keys(stocks).length === 0) {
             logWarning('No se encontraron productos con stock en Manager+');
             return {
@@ -447,9 +450,9 @@ async function syncAndSaveAllStocks(options = {}) {
 
         // Guardar stocks en la base de datos
         const saveResults = await saveStocksToDatabase(stocks, productNames, options);
-        
+
         return saveResults;
-        
+
     } catch (error) {
         logError(`Error en sincronización completa de stocks: ${error.message}`);
         throw error;
@@ -469,7 +472,7 @@ async function syncAndSaveAllStocks(options = {}) {
 async function syncAndSaveStocksBySKUs(skus, options = {}) {
     try {
         logInfo(`Sincronizando stocks de ${skus.length} productos específicos...`);
-        
+
         // Obtener stocks desde Manager+
         const { stocks, errors } = await getStocksBySKUs(skus, {
             concurrency: options.concurrency || 5,
@@ -489,14 +492,14 @@ async function syncAndSaveStocksBySKUs(skus, options = {}) {
         // Obtener nombres de productos
         const productNames = {};
         const { saveConcurrency = 10 } = options;
-        
+
         if (options.includeNames) {
             logInfo('Obteniendo información adicional de productos...');
             const stockSkus = Object.keys(stocks);
-            
+
             for (let i = 0; i < stockSkus.length; i += saveConcurrency) {
                 const batch = stockSkus.slice(i, i + saveConcurrency);
-                
+
                 const promises = batch.map(async (sku) => {
                     try {
                         const product = await getManagerProductBySKU(sku);
@@ -507,7 +510,7 @@ async function syncAndSaveStocksBySKUs(skus, options = {}) {
                         // Continuar sin nombre si hay error
                     }
                 });
-                
+
                 await Promise.all(promises);
             }
         }
@@ -519,9 +522,9 @@ async function syncAndSaveStocksBySKUs(skus, options = {}) {
 
         // Agregar errores de obtención de stocks
         saveResults.errors += Object.keys(errors).length;
-        
+
         return saveResults;
-        
+
     } catch (error) {
         logError(`Error en sincronización de stocks por SKU: ${error.message}`);
         throw error;
@@ -537,7 +540,7 @@ async function syncAndSaveStocksBySKUs(skus, options = {}) {
 async function syncAndSaveStockBySKU(sku) {
     try {
         const product = await getManagerProductBySKU(sku);
-        
+
         if (!product) {
             return {
                 success: false,
@@ -548,7 +551,7 @@ async function syncAndSaveStockBySKU(sku) {
 
         const result = await saveStockToDatabase(product.sku, product.stock, product.nombre);
         return result;
-        
+
     } catch (error) {
         logError(`Error al sincronizar stock de ${sku}: ${error.message}`);
         return {
