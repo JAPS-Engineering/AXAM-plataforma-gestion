@@ -11,8 +11,11 @@ import {
     ArrowUp,
     ArrowDown,
     Minus,
-    Save
+    Save,
+    CheckCircle2,
+    XCircle
 } from "lucide-react";
+import { PendingShipmentsSync } from "@/components/pending-shipments-sync";
 
 interface SuggestedPurchase {
     id: number;
@@ -21,6 +24,7 @@ interface SuggestedPurchase {
     familia: string;
     stockActual: number;
     stockMinimo: number | null;
+    stockOptimo?: number | null; // Nuevo campo opcional
     promedioVenta: number;
     tendencia: number;
     prediccionProximoMes: number;
@@ -28,6 +32,7 @@ interface SuggestedPurchase {
     mesesCobertura: number;
     algoritmo: string;
     compraRealizar: number | null;
+    pendientes?: number; // Campo para los pendientes de despacho
 }
 
 interface ApiResponse {
@@ -89,6 +94,10 @@ export default function AnalisisPage() {
     const [loadingProveedores, setLoadingProveedores] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    // Manager+ Sync State
+    const [fetchingPendientes, setFetchingPendientes] = useState(false);
+    const [pendientesData, setPendientesData] = useState<Record<string, number>>({});
+
     // Búsqueda
     const [search, setSearch] = useState("");
 
@@ -114,6 +123,11 @@ export default function AnalisisPage() {
             }
         }
         loadProveedores();
+    }, []);
+
+    const onPendientesLoaded = useCallback((map: Record<string, number>) => {
+        setPendientesData(map);
+        setFetchingPendientes(false);
     }, []);
 
     // Función para calcular sugerencias
@@ -227,10 +241,16 @@ export default function AnalisisPage() {
                             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
                             Recalcular
                         </button>
+
+                        <div className="h-8 w-px bg-slate-200 mx-2" />
+
+                        <PendingShipmentsSync
+                            onPendientesLoaded={onPendientesLoaded}
+                        />
                     </div>
                 </header>
 
-                <main className="flex-1 overflow-auto p-6">
+                <main className="flex-1 overflow-auto p-6 relative">
                     {/* Configuración Panel */}
                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
@@ -421,7 +441,8 @@ export default function AnalisisPage() {
                                             <th className="px-4 py-3 text-left font-semibold text-slate-600">SKU</th>
                                             <th className="px-4 py-3 text-left font-semibold text-slate-600">Descripción</th>
                                             <th className="px-4 py-3 text-right font-semibold text-slate-600">Stock Actual</th>
-                                            <th className="px-4 py-3 text-right font-semibold text-slate-600">Stock Mín.</th>
+                                            <th className="px-4 py-3 text-right font-semibold text-red-600">Stock Mín.</th>
+                                            <th className="px-4 py-3 text-right font-semibold text-blue-600">Stock Ópt.</th>
                                             <th className="px-4 py-3 text-right font-semibold text-slate-600">Prom. Venta</th>
                                             {algoritmo === "PREDICCION" && (
                                                 <>
@@ -433,6 +454,9 @@ export default function AnalisisPage() {
                                                     </th>
                                                 </>
                                             )}
+                                            <th className="px-4 py-3 text-right font-semibold text-amber-700 bg-amber-50">
+                                                Pendiente (3M)
+                                            </th>
                                             <th className="px-4 py-3 text-right font-semibold text-emerald-700 bg-emerald-50">
                                                 Sugerido
                                             </th>
@@ -463,10 +487,16 @@ export default function AnalisisPage() {
                                                     <td className="px-4 py-3 text-right tabular-nums">
                                                         {item.stockActual.toLocaleString("es-CL")}
                                                     </td>
-                                                    <td className="px-4 py-3 text-right tabular-nums">
+                                                    <td className="px-4 py-3 text-right tabular-nums text-red-600 font-medium">
                                                         {item.stockMinimo !== null
                                                             ? item.stockMinimo.toLocaleString("es-CL")
-                                                            : <span className="text-slate-400">-</span>
+                                                            : <span className="text-slate-300">-</span>
+                                                        }
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right tabular-nums text-blue-600">
+                                                        {item.stockOptimo !== undefined && item.stockOptimo !== null
+                                                            ? item.stockOptimo.toLocaleString("es-CL")
+                                                            : <span className="text-slate-300">-</span>
                                                         }
                                                     </td>
                                                     <td className="px-4 py-3 text-right tabular-nums">
@@ -497,8 +527,16 @@ export default function AnalisisPage() {
                                                             </td>
                                                         </>
                                                     )}
-                                                    <td className="px-4 py-3 text-right font-semibold text-emerald-700 bg-emerald-50 tabular-nums">
-                                                        {item.cantidadSugerida.toLocaleString("es-CL")}
+                                                    <td className="px-4 py-3 text-right bg-amber-50 tabular-nums font-medium text-amber-700">
+                                                        {fetchingPendientes ? (
+                                                            <div className="h-4 w-8 bg-amber-200 animate-pulse rounded ml-auto"></div>
+                                                        ) : (
+                                                            pendientesData[item.sku] ? pendientesData[item.sku].toLocaleString("es-CL") : "0"
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right font-bold text-emerald-700 bg-emerald-50 tabular-nums">
+                                                        {/* Restar pendientes del sugerido si existen */}
+                                                        {Math.max(0, item.cantidadSugerida - (pendientesData[item.sku] || 0)).toLocaleString("es-CL")}
                                                     </td>
                                                     <td className="px-4 py-2 bg-blue-50">
                                                         <div className="flex items-center gap-1">

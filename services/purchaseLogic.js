@@ -94,7 +94,10 @@ async function calculateSuggestedPurchase(sku, options = {}) {
 
     if (algoritmo === ALGORITMOS.LINEAL) {
         // Cálculo lineal simple: promedio * meses de cobertura - stock actual
-        cantidadSugerida = Math.max(0, (promedioVenta * mesesCobertura) - stockActual);
+        // Si hay Stock Óptimo, ese es el objetivo. Si no, calcular cobertura dinámica.
+        let stockObjetivo = producto.stockOptimo || (promedioVenta * mesesCobertura);
+        cantidadSugerida = Math.max(0, stockObjetivo - stockActual);
+
         prediccionProximoMes = promedioVenta;
     } else if (algoritmo === ALGORITMOS.PREDICCION) {
         // Cálculo con tendencia (regresión lineal simple)
@@ -120,10 +123,14 @@ async function calculateSuggestedPurchase(sku, options = {}) {
 
             // Cantidad sugerida considerando la predicción
             const prediccionCobertura = prediccionProximoMes * mesesCobertura;
-            cantidadSugerida = Math.max(0, prediccionCobertura - stockActual);
+            // Si hay Stock Óptimo, tiene prioridad sobre la cobertura calculada
+            const stockObjetivo = producto.stockOptimo || prediccionCobertura;
+
+            cantidadSugerida = Math.max(0, stockObjetivo - stockActual);
         } else {
             // Si no hay suficientes datos, usar lineal
-            cantidadSugerida = Math.max(0, (promedioVenta * mesesCobertura) - stockActual);
+            let stockObjetivo = producto.stockOptimo || (promedioVenta * mesesCobertura);
+            cantidadSugerida = Math.max(0, stockObjetivo - stockActual);
         }
     }
 
@@ -144,6 +151,7 @@ async function calculateSuggestedPurchase(sku, options = {}) {
         origen: producto.origen,
         stockActual,
         stockMinimo,
+        stockOptimo: producto.stockOptimo,
         promedioVenta: parseFloat(promedioVenta.toFixed(2)),
         tendencia: parseFloat(tendencia.toFixed(2)),
         prediccionProximoMes: Math.round(prediccionProximoMes),

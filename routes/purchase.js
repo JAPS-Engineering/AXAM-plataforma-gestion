@@ -363,4 +363,48 @@ router.get('/ordenes', async (req, res) => {
     }
 });
 
+/**
+ * POST /api/purchase/pending-shipments-cookie
+ * Obtiene pendientes usando cookie de sesión (Headless)
+ */
+router.post('/pending-shipments-cookie', (req, res) => {
+    const { sessionId } = req.body;
+    const { exec } = require('child_process');
+    const path = require('path');
+
+    if (!sessionId) {
+        return res.status(400).json({ error: 'Session ID is required' });
+    }
+
+    const scriptPath = path.join(__dirname, '../scripts/fetchPendingShipments.js');
+
+    // Execute script
+    exec(`node "${scriptPath}" "${sessionId}"`, (error, stdout, stderr) => {
+        if (error) {
+            logError(`Exec Error: ${error.message}`);
+            return res.status(500).json({ error: 'Script failed', details: error.message });
+        }
+
+        try {
+            // Find JSON in output (script might print logs)
+            // Look for the success JSON structure we printed
+            const jsonMatch = stdout.match(/\{.*"success":true.*\}/) || stdout.match(/\{.*"error":.*\}/);
+
+            if (jsonMatch) {
+                const result = JSON.parse(jsonMatch[0]);
+                if (result.error) {
+                    return res.status(500).json(result);
+                }
+                return res.json(result);
+            } else {
+                return res.status(500).json({ error: 'Invalid script output', raw: stdout });
+            }
+
+        } catch (e) {
+            logError(`Parse Error: ${e.message}`);
+            return res.status(500).json({ error: 'Failed to parse script output', raw: stdout });
+        }
+    });
+});
+
 module.exports = router;

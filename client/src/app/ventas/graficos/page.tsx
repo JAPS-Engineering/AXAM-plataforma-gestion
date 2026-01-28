@@ -10,6 +10,7 @@ import {
 import { useState } from "react";
 import { ChevronLeft, DollarSign, Activity, TrendingUp, PieChart as PieIcon, BarChart3, Calendar } from "lucide-react";
 import Link from "next/link";
+import { TargetsSection } from "@/components/targets-section";
 
 // Formateadores
 const formatCLP = (value: number) => {
@@ -63,21 +64,24 @@ export default function GraficosVentasPage() {
                             <TrendingUp className="h-6 w-6 text-indigo-600" />
                         </div>
                         <div>
-                            <h1 className="text-xl font-bold text-slate-900">Gráficos de Ventas</h1>
-                            <p className="text-xs text-slate-500">Visualización de tendencias y métricas</p>
+                            <h1 className="text-xl font-bold text-slate-900">Gráficos y Objetivos</h1>
+                            <p className="text-xs text-slate-500">Visualización de tendencias, market share y metas</p>
                         </div>
                     </div>
 
                     <div className="flex items-center gap-3">
-                        <select
-                            value={meses}
-                            onChange={(e) => setMeses(Number(e.target.value))}
-                            className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-                        >
-                            <option value={3}>Últimos 3 meses</option>
-                            <option value={6}>Últimos 6 meses</option>
-                            <option value={12}>Últimos 12 meses</option>
-                        </select>
+                        <div className="bg-slate-50 rounded-lg p-1 flex items-center border border-slate-200">
+                            <span className="text-xs font-semibold px-2 text-slate-500">Periodo:</span>
+                            <select
+                                value={meses}
+                                onChange={(e) => setMeses(Number(e.target.value))}
+                                className="px-2 py-1 text-sm bg-transparent border-none focus:outline-none focus:ring-0 text-slate-700 font-medium cursor-pointer"
+                            >
+                                <option value={3}>Últimos 3 meses</option>
+                                <option value={6}>Últimos 6 meses</option>
+                                <option value={12}>Últimos 12 meses</option>
+                            </select>
+                        </div>
                     </div>
                 </header>
 
@@ -91,7 +95,10 @@ export default function GraficosVentasPage() {
                             Error al cargar datos: {(error as Error).message}
                         </div>
                     ) : (
-                        <div className="space-y-8 pb-10">
+                        <div className="space-y-6 pb-10">
+
+                            {/* Seccion 0: Objetivos (Targets) - NUEVO */}
+                            <TargetsSection />
 
                             {/* Seccion 1: Resumen General */}
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -237,7 +244,7 @@ export default function GraficosVentasPage() {
                                         </ResponsiveContainer>
                                     </div>
                                     <div className="mt-2 text-right">
-                                        <Link href="#" className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">Ver ranking completo &rarr;</Link>
+                                        <Link href="/ventas/analisis" className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">Ver ranking detallado &rarr;</Link>
                                     </div>
                                 </div>
                             </div>

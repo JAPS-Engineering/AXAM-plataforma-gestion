@@ -16,7 +16,9 @@ const PORT = process.env.PORT || 3000;
 const isProduction = process.env.NODE_ENV === 'production';
 
 // Middlewares
-app.use(cors());
+app.use(cors({
+    origin: ['https://axam.managermas.cl', /localhost:/] // Permitir Manager+ y desarrollo local
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -34,6 +36,8 @@ const rotacionRoutes = require('./routes/rotacion');
 const dashboardRoutes = require('./routes/dashboard');
 const purchaseRoutes = require('./routes/purchase');
 const ventasRoutes = require('./routes/ventas');
+const targetRoutes = require('./routes/targets');
+const syncRoutes = require('./routes/sync');
 
 app.use('/api/productos', productosRoutes);
 app.use('/api/pedidos', pedidosRoutes);
@@ -41,6 +45,8 @@ app.use('/api/rotacion', rotacionRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/purchase', purchaseRoutes);
 app.use('/api/ventas', ventasRoutes);
+app.use('/api/targets', targetRoutes);
+app.use('/api/sync', syncRoutes);
 
 // Ruta de salud
 app.get('/health', (req, res) => {
@@ -52,14 +58,24 @@ app.get('/health', (req, res) => {
 
 // Servir archivos estáticos según el entorno
 if (isProduction) {
-    // En producción: servir el build de Next.js
-    const nextStaticDir = path.join(__dirname, 'client/.next/static');
-    const nextPublicDir = path.join(__dirname, 'client/public');
+    // En producción: servir el build estático de Next.js
+    const staticDir = path.join(__dirname, 'client/out');
 
-    app.use('/_next/static', express.static(nextStaticDir, { maxAge: '1y' }));
-    app.use(express.static(nextPublicDir));
+    app.use(express.static(staticDir));
 
-    logInfo('Modo producción: sirviendo frontend Next.js');
+    // Fallback para SPA (Single Page Application)
+    // Cualquier ruta no manejada por API devuelve index.html
+    // Usamos app.use como fallback universal (funciona en Express 4 y 5)
+    app.use((req, res) => {
+        // Solo servir index.html para peticiones GET, para otras devolver 404
+        if (req.method === 'GET') {
+            res.sendFile(path.join(staticDir, 'index.html'));
+        } else {
+            res.status(404).json({ error: 'Ruta no encontrada' });
+        }
+    });
+
+    logInfo('Modo producción: sirviendo frontend estático (Next.js export)');
 } else {
     // En desarrollo: servir public viejo (el frontend NextJS corre en otro puerto)
     app.use(express.static('public'));

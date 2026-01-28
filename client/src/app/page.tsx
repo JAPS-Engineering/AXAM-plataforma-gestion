@@ -10,7 +10,8 @@ import { ProductTable } from "@/components/product-table";
 import { Pagination } from "@/components/pagination";
 import { SyncModal } from "@/components/sync-modal";
 import { useState, useMemo } from "react";
-import { Package, TrendingUp, AlertTriangle, ShoppingCart, Download, FileText } from "lucide-react";
+import { Package, TrendingUp, AlertTriangle, ShoppingCart, Download, FileText, Database } from "lucide-react";
+import { PendingShipmentsSync } from "@/components/pending-shipments-sync";
 
 export default function DashboardPage() {
   const queryClient = useQueryClient();
@@ -28,6 +29,9 @@ export default function DashboardPage() {
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(100);
+
+  // Manager+ Sync State
+  const [pendientesData, setPendientesData] = useState<Record<string, number>>({});
 
   // Data fetching
   const { data, isLoading, error, refetch, isFetching } = useQuery({
@@ -225,6 +229,12 @@ export default function DashboardPage() {
           isSyncing={isSyncModalOpen}
         />
 
+        <div className="bg-white border-b border-slate-200 px-6 py-2 flex items-center justify-end gap-2">
+          <PendingShipmentsSync
+            onPendientesLoaded={setPendientesData}
+          />
+        </div>
+
         <main className="flex-1 overflow-auto p-6">
           {/* KPI Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
@@ -340,6 +350,7 @@ export default function DashboardPage() {
               productos={paginatedProducts}
               columnas={data?.meta?.columnas || []}
               onOrderUpdated={() => refetch()}
+              pendientesMap={pendientesData}
             />
           )}
 

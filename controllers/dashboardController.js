@@ -170,13 +170,17 @@ async function getDashboard(req, res) {
             // Fórmula base: Promedio - Stock - Venta del mes actual (DB + Hoy)
             let compraSugerida = Math.round(promedio - stockActual - cantidadMesActual);
 
-            // Si hay stockMinimo configurado, el sugerido debe ser AL MENOS lo que falta para llegar al mínimo
-            // Es decir: max(compraSugerida, stockMinimo - stockActual)
-            if (stockMinimo !== null && stockMinimo > 0) {
-                const faltaParaMinimo = Math.round(stockMinimo - stockActual);
-                if (faltaParaMinimo > 0) {
-                    // Si estamos bajo el mínimo, sugerido debe cubrir al menos esa diferencia
-                    compraSugerida = Math.max(compraSugerida, faltaParaMinimo);
+            // Si hay Stock Óptimo, ese es el objetivo principal
+            if (producto.stockOptimo && producto.stockOptimo > 0) {
+                compraSugerida = Math.max(0, producto.stockOptimo - stockActual);
+            } else {
+                // Lógica estándar promedio * N meses
+                // Si hay stockMinimo, asegurar que no baje de ahí
+                if (stockMinimo !== null && stockMinimo > 0) {
+                    const faltaParaMinimo = Math.round(stockMinimo - stockActual);
+                    if (faltaParaMinimo > 0) {
+                        compraSugerida = Math.max(compraSugerida, faltaParaMinimo);
+                    }
                 }
             }
 
@@ -189,7 +193,8 @@ async function getDashboard(req, res) {
                     sku: producto.sku,
                     descripcion: producto.descripcion,
                     familia: producto.familia,
-                    stockMinimo: stockMinimo // Incluir en respuesta
+                    stockMinimo: stockMinimo,
+                    stockOptimo: producto.stockOptimo // Incluir Stock Óptimo
                 },
                 ventasMeses,
                 promedio: parseFloat(promedio.toFixed(2)),

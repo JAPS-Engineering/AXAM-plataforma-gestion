@@ -2,7 +2,8 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -16,7 +17,8 @@ model Producto {
   descripcion     String
   familia         String   @default("")
   proveedor       String   @default("")           // Nombre/código del proveedor
-  stockMinimo     Float?   @map("stock_minimo") // Umbral para alerta de quiebre (opcional)
+  stockMinimo     Float?   @map("stock_minimo") // Umbral para alerta de quiebre
+  stockOptimo     Float?   @map("stock_optimo") // Nivel ideal de inventario
   factorEmpaque   Float    @default(1)   @map("factor_empaque") // Unidades por pallet/caja
   diasImportacion Int      @default(0)   @map("dias_importacion") // Tiempo de llegada (importados)
   origen          String   @default("NACIONAL")   // 'NACIONAL' o 'IMPORTADO'
@@ -197,4 +199,34 @@ model StockHistorico {
   @@index([productoId])
   @@index([fecha])
   @@map("stock_historico")
+}
+
+// Metas definidas por Gerencia
+model ObjetivoVenta {
+  id            Int      @id @default(autoincrement())
+  tipo          String   // 'VENDEDOR' | 'FAMILIA' | 'PROVEEDOR'
+  entidadId     String   // ID o Nombre del Vendedor / Familia / Proveedor
+  ano           Int
+  mes           Int
+  montoObjetivo Float    @default(0) @map("monto_objetivo")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@unique([tipo, entidadId, ano, mes])
+  @@map("objetivos_venta")
+}
+
+// "PROPONGO" - Forecast del Vendedor
+model ProyeccionVenta {
+  id            Int      @id @default(autoincrement())
+  vendedorId    String   @map("vendedor_id") // ID del Vendedor
+  ano           Int
+  mes           Int
+  montoPropongo Float    @default(0) @map("monto_propongo") // La estimación del vendedor
+  observacion   String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@unique([vendedorId, ano, mes])
+  @@map("proyecciones_venta")
 }

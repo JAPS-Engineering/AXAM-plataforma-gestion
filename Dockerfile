@@ -1,7 +1,7 @@
 # ================================
 # Stage 1: Build React Frontend
 # ================================
-FROM node:20-alpine AS frontend-builder
+FROM node:20-slim AS frontend-builder
 
 WORKDIR /app/client
 
@@ -18,12 +18,20 @@ RUN npm run build
 # ================================
 # Stage 2: Production Server
 # ================================
-FROM node:20-alpine AS runner
+FROM node:20-slim AS runner
 
 WORKDIR /app
 
+# Instalar OpenSSL para asegurar compatibilidad con Prisma
+RUN apt-get update -y && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+
+# Instalar dependencias de producción para servidor
 # Instalar dependencias de producción para servidor
 COPY package*.json ./
+COPY scripts/ ./scripts/
+
+# Instalar dependencias (permitiendo scripts para que better-sqlite3 compile su binario)
+# postinstall.js detectará que no hay carpeta client y saltará la instalación del frontend
 RUN npm ci --omit=dev
 
 # Copiar el servidor backend
@@ -37,10 +45,8 @@ COPY prisma/ ./prisma/
 # Generar cliente Prisma
 RUN npx prisma generate
 
-# Copiar build de Next.js (standalone output)
-COPY --from=frontend-builder /app/client/.next/standalone ./client/.next/standalone
-COPY --from=frontend-builder /app/client/.next/static ./client/.next/static
-COPY --from=frontend-builder /app/client/public ./client/public
+# Copiar build estático de Next.js
+COPY --from=frontend-builder /app/client/out ./client/out
 
 # Variables de entorno
 ENV NODE_ENV=production

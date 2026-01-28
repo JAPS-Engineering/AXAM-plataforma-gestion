@@ -10,10 +10,11 @@ interface ProductTableProps {
     productos: ProductoDashboard[];
     columnas: string[];
     onOrderUpdated?: () => void;
+    pendientesMap?: Record<string, number>;
 }
 
 type SortDirection = "asc" | "desc" | null;
-type SortColumn = "familia" | "sku" | "descripcion" | "ventaMes" | "stock" | "sugerido" | "aComprar" | `mes_${number}` | null;
+type SortColumn = "familia" | "sku" | "descripcion" | "promedio" | "ventaMes" | "stock" | "sugerido" | "aComprar" | `mes_${number}` | null;
 
 interface SortConfig {
     column: SortColumn;
@@ -153,7 +154,7 @@ function EditableCell({ productoId, initialValue, onSave }: EditableCellProps) {
     );
 }
 
-export function ProductTable({ productos, columnas, onOrderUpdated }: ProductTableProps) {
+export function ProductTable({ productos, columnas, onOrderUpdated, pendientesMap }: ProductTableProps) {
     const [sortConfig, setSortConfig] = useState<SortConfig>({ column: null, direction: null });
 
     const handleSaveOrder = useCallback(async (productoId: number, cantidad: number) => {
@@ -193,6 +194,10 @@ export function ProductTable({ productos, columnas, onOrderUpdated }: ProductTab
                 case "descripcion":
                     aValue = a.producto.descripcion.toLowerCase();
                     bValue = b.producto.descripcion.toLowerCase();
+                    break;
+                case "promedio":
+                    aValue = a.promedio || 0;
+                    bValue = b.promedio || 0;
                     break;
                 case "ventaMes":
                     aValue = a.mesActual?.ventaActual || 0;
@@ -287,6 +292,13 @@ export function ProductTable({ productos, columnas, onOrderUpdated }: ProductTab
                                 </div>
                             </th>
                         ))}
+                        {/* Promedio */}
+                        <th className="px-4 py-3 text-right font-semibold text-slate-900 bg-slate-200/50 border-b border-slate-300 border-l border-slate-200 min-w-[100px]">
+                            <div className="flex items-center justify-end">
+                                Promedio
+                                <SortButton column="promedio" currentSort={sortConfig} onSort={handleSort} isNumeric />
+                            </div>
+                        </th>
                         {/* Mes Actual */}
                         <th className="px-4 py-3 text-right font-semibold text-blue-700 bg-blue-50 border-b border-blue-200 border-l-2 border-l-blue-400 min-w-[100px]">
                             <div className="flex items-center justify-end">
@@ -302,6 +314,12 @@ export function ProductTable({ productos, columnas, onOrderUpdated }: ProductTab
                         </th>
                         <th className="px-4 py-3 text-center font-semibold text-blue-700 bg-blue-50 border-b border-blue-200 min-w-[80px]">
                             Estado
+                        </th>
+                        {/* PENDIENTES */}
+                        <th className="px-4 py-3 text-right font-semibold text-amber-700 bg-amber-50 border-b border-amber-200 min-w-[100px]">
+                            <div className="flex items-center justify-end">
+                                Pendiente (3M)
+                            </div>
                         </th>
                         {/* SUGERIDO - Destacado */}
                         <th className="px-4 py-3 text-right font-semibold text-emerald-800 bg-emerald-100 border-b border-emerald-300 border-l-2 border-l-emerald-500 min-w-[110px]">
@@ -322,6 +340,8 @@ export function ProductTable({ productos, columnas, onOrderUpdated }: ProductTab
                     {sortedProductos.map((item, idx) => {
                         const compraSugerida = item.compraSugerida || 0;
                         const bajoMinimo = item.bajoMinimo;
+                        const pendientes = pendientesMap ? (pendientesMap[item.producto.sku] || 0) : 0;
+                        const sugeridoFinal = Math.max(0, compraSugerida - pendientes);
 
                         return (
                             <tr
@@ -363,6 +383,10 @@ export function ProductTable({ productos, columnas, onOrderUpdated }: ProductTab
                                         {formatNumber(mes.cantidad)}
                                     </td>
                                 ))}
+                                {/* Promedio */}
+                                <td className="px-4 py-2 text-right text-slate-900 font-medium border-b border-slate-200 bg-slate-100/30 border-l border-slate-100 tabular-nums">
+                                    {formatNumber(Math.round(item.promedio || 0))}
+                                </td>
                                 {/* Mes actual */}
                                 <td className="px-4 py-2 text-right text-slate-800 font-medium border-b border-blue-100 bg-blue-50/30 border-l-2 border-l-blue-400 tabular-nums">
                                     {formatNumber(item.mesActual?.ventaActual)}
@@ -377,16 +401,20 @@ export function ProductTable({ productos, columnas, onOrderUpdated }: ProductTab
                                         sugerido={compraSugerida}
                                     />
                                 </td>
+                                {/* PENDIENTES */}
+                                <td className="px-4 py-2 text-right border-b border-amber-100 bg-amber-50/20 tabular-nums text-amber-700 font-medium">
+                                    {formatNumber(pendientes)}
+                                </td>
                                 {/* SUGERIDO - Destacado */}
                                 <td
                                     className={cn(
                                         "px-4 py-2 text-right border-b border-emerald-200 bg-emerald-50 border-l-2 border-l-emerald-500 tabular-nums font-semibold",
-                                        compraSugerida > 0 && "text-emerald-700",
-                                        compraSugerida < 0 && "text-red-600",
-                                        compraSugerida === 0 && "text-slate-500"
+                                        sugeridoFinal > 0 && "text-emerald-700",
+                                        sugeridoFinal < 0 && "text-red-600",
+                                        sugeridoFinal === 0 && "text-slate-500"
                                     )}
                                 >
-                                    {formatNumber(compraSugerida)}
+                                    {formatNumber(sugeridoFinal)}
                                 </td>
                                 <td className="px-4 py-2 border-b border-amber-100 bg-amber-50/30">
                                     <EditableCell
@@ -403,4 +431,5 @@ export function ProductTable({ productos, columnas, onOrderUpdated }: ProductTab
         </div>
     );
 }
+
 

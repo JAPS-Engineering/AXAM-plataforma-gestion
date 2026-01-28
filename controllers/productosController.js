@@ -513,10 +513,73 @@ async function updateStockMinimo(req, res) {
     }
 }
 
+
+/**
+ * GET /api/productos/historial-stock
+ * Obtener evolución del stock para un producto (por SKU)
+ */
+async function getHistorialStock(req, res) {
+    try {
+        const { sku, dias = 30 } = req.query;
+
+        if (!sku) {
+            return res.status(400).json({ error: 'Se requiere el parámetro SKU' });
+        }
+
+        const diasNum = parseInt(dias, 10) || 30;
+
+        // Buscar producto por SKU
+        const producto = await prisma.producto.findUnique({
+            where: { sku }
+        });
+
+        if (!producto) {
+            return res.status(404).json({ error: 'Producto no encontrado' });
+        }
+
+        // Obtener historial de stock de los últimos N días
+        const today = new Date();
+        // Convertir a YYYYMMDD para comparación simple si guardamos asi, 
+        // pero StockHistorico usa DateTime en `fecha`.
+        // Calculamos fecha límite
+        const fechaLimite = new Date();
+        fechaLimite.setDate(today.getDate() - diasNum);
+
+        const historial = await prisma.stockHistorico.findMany({
+            where: {
+                productoId: producto.id,
+                fecha: {
+                    gte: fechaLimite
+                }
+            },
+            orderBy: {
+                fecha: 'asc'
+            }
+        });
+
+        res.json({
+            sku,
+            descripcion: producto.descripcion,
+            dias: diasNum,
+            historial: historial.map(h => ({
+                fecha: h.fecha,
+                stock: h.stock,
+                bodega: h.bodega // Si existe este campo
+            }))
+        });
+
+    } catch (error) {
+        logError(`Error en getHistorialStock: ${error.message}`);
+        res.status(500).json({ error: 'Error al obtener historial de stock' });
+    }
+}
+
 module.exports = {
     getVentasHistoricas,
     getVentasActuales,
     getProductosCompleto,
     getProductosMinimos,
-    updateStockMinimo
+    updateStockMinimo,
+    getHistorialStock
 };
+

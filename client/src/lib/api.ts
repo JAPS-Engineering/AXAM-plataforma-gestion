@@ -228,3 +228,83 @@ export async function fetchGraficosAvanzados(): Promise<GraficosAvanzadosRespons
     return data;
 }
 
+
+// === API OBJETIVOS Y PROYECCIONES ===
+
+export interface ObjetivoVenta {
+    id: number;
+    tipo: string;
+    entidadId: string;
+    ano: number;
+    mes: number;
+    montoObjetivo: number;
+}
+
+export interface ProyeccionVenta {
+    id: number;
+    vendedorId: string;
+    ano: number;
+    mes: number;
+    montoPropongo: number;
+    observacion?: string;
+}
+
+export interface TargetsResponse {
+    meta: {
+        ano: number;
+        mes: number;
+    };
+    objetivos: ObjetivoVenta[];
+    proyecciones: ProyeccionVenta[];
+}
+
+export async function fetchTargets(ano?: number, mes?: number, vendedorId?: string): Promise<TargetsResponse> {
+    const params = new URLSearchParams();
+    if (ano) params.append("ano", ano.toString());
+    if (mes) params.append("mes", mes.toString());
+    if (vendedorId) params.append("vendedorId", vendedorId);
+
+    const { data } = await api.get<TargetsResponse>(`/targets?${params}`);
+    return data;
+}
+
+export async function saveObjetivo(data: {
+    tipo: string;
+    entidadId: string;
+    ano: number;
+    mes: number;
+    montoObjetivo: number;
+}): Promise<ObjetivoVenta> {
+    const response = await api.post<{ success: boolean; objetivo: ObjetivoVenta }>("/targets/objetivo", data);
+    return response.data.objetivo;
+}
+
+
+export async function saveProyeccion(data: {
+    vendedorId: string;
+    ano: number;
+    mes: number;
+    montoPropongo: number;
+    observacion?: string;
+}): Promise<ProyeccionVenta> {
+    const response = await api.post<{ success: boolean; proyeccion: ProyeccionVenta }>("/targets/proyeccion", data);
+    return response.data.proyeccion;
+}
+
+export interface StockHistoryPoint {
+    fecha: string; // ISO date
+    stock: number;
+    bodega?: string;
+}
+
+export interface StockHistoryResponse {
+    sku: string;
+    descripcion: string;
+    dias: number;
+    historial: StockHistoryPoint[];
+}
+
+export async function fetchStockHistory(sku: string, dias: number = 30): Promise<StockHistoryResponse> {
+    const { data } = await api.get<StockHistoryResponse>(`/productos/historial-stock?sku=${sku}&dias=${dias}`);
+    return data;
+}

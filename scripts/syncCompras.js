@@ -38,7 +38,8 @@ async function processFACEs(faces) {
             // Obtener detalles si no vienen
             let fullDoc = doc;
             if (!doc.detalles) {
-                fullDoc = await getDocumentDetails('FACE', doc);
+                // Aumentamos reintentos a 5 puesto que hacemos muchas peticiones seguidas
+                fullDoc = await getDocumentDetails('FACE', doc, 5);
             }
 
             if (!fullDoc) {
@@ -112,8 +113,11 @@ async function processFACEs(faces) {
 
         } catch (error) {
             errores++;
-            // logError(`Error processing FACE ${doc.folio}: ${error.message}`);
+            logError(`Error processing FACE ${doc.folio}: ${error.message}`);
         }
+
+        // Pequeña pausa para no saturar la API (Rate Limit Friendly)
+        await new Promise(r => setTimeout(r, 200));
     }
     console.log(''); // Newline
 

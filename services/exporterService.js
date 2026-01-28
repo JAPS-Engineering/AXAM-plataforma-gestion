@@ -10,44 +10,28 @@ const ExcelJS = require('exceljs');
  * @param {Array} items - Lista de productos a pedir
  * @returns {Buffer} - Buffer del archivo Excel
  */
-async function generateKCExcel(items) {
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Orden de Compra KC');
+/**
+ * Genera archivo CSV para Kimberly Clark
+ * @param {Array} items - Lista de productos a pedir
+ * @returns {string} - Contenido del archivo CSV
+ */
+function generateKCCSV(items) {
+    const headers = ['SKU', 'Descripción', 'Cantidad', 'Stock Actual', 'Promedio Venta', 'Observaciones'];
+    const lines = [headers.join(',')];
 
-    // Encabezados
-    worksheet.columns = [
-        { header: 'SKU', key: 'sku', width: 20 },
-        { header: 'Descripción', key: 'descripcion', width: 40 },
-        { header: 'Cantidad', key: 'cantidad', width: 15 },
-        { header: 'Stock Actual', key: 'stockActual', width: 15 },
-        { header: 'Promedio Venta', key: 'promedioVenta', width: 18 },
-        { header: 'Observaciones', key: 'observaciones', width: 30 }
-    ];
-
-    // Estilo de encabezados
-    worksheet.getRow(1).font = { bold: true };
-    worksheet.getRow(1).fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF0066CC' }
-    };
-    worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-
-    // Agregar datos
     items.forEach(item => {
-        worksheet.addRow({
-            sku: item.sku,
-            descripcion: item.descripcion,
-            cantidad: item.cantidadSugerida || item.cantidad,
-            stockActual: item.stockActual,
-            promedioVenta: item.promedioVenta,
-            observaciones: item.observaciones || ''
-        });
+        const row = [
+            `"${item.sku}"`,
+            `"${(item.descripcion || '').replace(/"/g, '""')}"`,
+            item.cantidadSugerida || item.cantidad,
+            item.stockActual,
+            item.promedioVenta,
+            `"${(item.observaciones || '').replace(/"/g, '""')}"`
+        ];
+        lines.push(row.join(','));
     });
 
-    // Generar buffer
-    const buffer = await workbook.xlsx.writeBuffer();
-    return buffer;
+    return lines.join('\n');
 }
 
 /**
@@ -157,7 +141,7 @@ async function generateMultiProviderExcel(ordenesPorProveedor) {
 }
 
 module.exports = {
-    generateKCExcel,
+    generateKCCSV,
     generateTorkTxt,
     generateGenericCSV,
     generateMultiProviderExcel

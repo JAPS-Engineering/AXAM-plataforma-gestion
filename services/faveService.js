@@ -19,8 +19,13 @@ async function getDocuments(docType = 'FAVE', fechaInicio, fechaFin, maxRetries 
     const fechaInicioStr = format(fechaInicio, 'yyyyMMdd');
     const fechaFinStr = format(fechaFin, 'yyyyMMdd');
 
-    // Endpoint genérico para documentos: /documents/{rut}/{TIPO}/V/
-    const url = `${ERP_BASE_URL}/documents/${RUT_EMPRESA}/${docType}/V/?df=${fechaInicioStr}&dt=${fechaFinStr}`;
+    // Determinar si es Venta (V) o Compra (C)
+    // FACE, GDCE, NCCE son compras
+    const isCompra = ['FACE', 'GDCE', 'NCCE', 'NDCE'].includes(docType);
+    const tipoEndpoint = isCompra ? 'C' : 'V';
+
+    // Endpoint genérico para documentos: /documents/{rut}/{TIPO}/{V|C}/
+    const url = `${ERP_BASE_URL}/documents/${RUT_EMPRESA}/${docType}/${tipoEndpoint}/?df=${fechaInicioStr}&dt=${fechaFinStr}`;
 
     logInfo(`Obteniendo ${docType} del ${format(fechaInicio, 'dd/MM/yyyy')} al ${format(fechaFin, 'dd/MM/yyyy')}...`);
 
@@ -98,7 +103,12 @@ async function getAllFAVEs(fechaInicio, fechaFin) {
 async function getDocumentDetails(docType, doc, maxRetries = 2, returnErrorInfo = false) {
     const headers = await getAuthHeaders();
     const docnumreg = doc.docnumreg;
-    const endpointConDetalles = `${ERP_BASE_URL}/documents/${RUT_EMPRESA}/${docType}/V/?docnumreg=${docnumreg}&details=1`;
+
+    // Determinar si es Venta (V) o Compra (C)
+    const isCompra = ['FACE', 'GDCE', 'NCCE', 'NDCE'].includes(docType);
+    const tipoEndpoint = isCompra ? 'C' : 'V';
+
+    const endpointConDetalles = `${ERP_BASE_URL}/documents/${RUT_EMPRESA}/${docType}/${tipoEndpoint}/?docnumreg=${docnumreg}&details=1`;
 
     let lastError = null;
     let lastResponse = null;
