@@ -24,7 +24,8 @@ export default function VentasPage() {
     const [marca, setMarca] = useState("");
     const [meses, setMeses] = useState(3);
     const [busqueda, setBusqueda] = useState("");
-    const [ocultarCero, setOcultarCero] = useState(false);
+    const [ocultarCero, setOcultarCero] = useState(true);
+    const [salesStatus, setSalesStatus] = useState<'all' | 'with_sales' | 'without_sales'>('all');
 
     // Pagination state
     const [currentPage, setCurrentPage] = useState(1);
@@ -53,13 +54,15 @@ export default function VentasPage() {
             });
         }
 
-        // Hide zero amount
-        if (ocultarCero) {
-            result = result.filter((p) => p.totalMonto > 0);
+        // Unified sales filter logic
+        if (salesStatus === 'with_sales' || ocultarCero) {
+            result = result.filter((p) => (p.totalMonto || 0) > 0);
+        } else if (salesStatus === 'without_sales') {
+            result = result.filter((p) => (p.totalMonto || 0) === 0);
         }
 
         return result;
-    }, [data?.productos, busqueda, ocultarCero]);
+    }, [data?.productos, busqueda, ocultarCero, salesStatus]);
 
     // Paginación
     const { paginatedProducts, totalPages } = useMemo(() => {
@@ -180,6 +183,8 @@ export default function VentasPage() {
                         onBusquedaChange={handleFilterChange(setBusqueda)}
                         ocultarCero={ocultarCero}
                         onOcultarCeroChange={handleFilterChange(setOcultarCero)}
+                        salesStatus={salesStatus}
+                        onSalesStatusChange={handleFilterChange(setSalesStatus)}
                         estadosSeleccionados={[]}
                         onEstadosChange={() => { }} // No usado aquí
                         totalProductos={data?.meta.totalProductos || 0}

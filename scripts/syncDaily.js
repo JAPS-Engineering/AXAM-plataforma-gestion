@@ -60,7 +60,8 @@ async function syncDaySales(date) {
 
         let updated = 0;
 
-        for (const [sku, data] of sales) {
+        for (const [key, data] of sales) {
+            const { sku, vendedor } = data;
             // Buscar el producto
             const producto = await prisma.producto.findUnique({
                 where: { sku }
@@ -71,13 +72,13 @@ async function syncDaySales(date) {
                 const newProduct = await prisma.producto.create({
                     data: { sku, descripcion: 'Producto nuevo (auto-creado)', familia: '' }
                 });
-                await upsertMonthlySale(newProduct.id, year, month, data.cantidad, data.montoNeto);
+                await upsertMonthlySale(newProduct.id, year, month, data.cantidad, data.montoNeto, vendedor, false);
                 updated++;
                 continue;
             }
 
             // Actualizar venta mensual (acumular)
-            await upsertMonthlySale(producto.id, year, month, data.cantidad, data.montoNeto, true);
+            await upsertMonthlySale(producto.id, year, month, data.cantidad, data.montoNeto, vendedor, true);
             updated++;
         }
 
@@ -94,10 +95,10 @@ async function syncDaySales(date) {
 /**
  * Upsert de venta mensual
  */
-async function upsertMonthlySale(productoId, ano, mes, cantidad, montoNeto, accumulate = false) {
+async function upsertMonthlySale(productoId, ano, mes, cantidad, montoNeto, vendedor = '', accumulate = false) {
     const existing = await prisma.ventaHistorica.findUnique({
         where: {
-            productoId_ano_mes: { productoId, ano, mes }
+            productoId_ano_mes_vendedor: { productoId, ano, mes, vendedor: vendedor || '' }
         }
     });
 
@@ -125,6 +126,7 @@ async function upsertMonthlySale(productoId, ano, mes, cantidad, montoNeto, accu
                 productoId,
                 ano,
                 mes,
+                vendedor: vendedor || '',
                 cantidadVendida: cantidad,
                 montoNeto: montoNeto
             }
@@ -148,7 +150,8 @@ async function syncFullMonth(year, month) {
 
         let updated = 0;
 
-        for (const [sku, data] of sales) {
+        for (const [key, data] of sales) {
+            const { sku, vendedor } = data;
             let producto = await prisma.producto.findUnique({
                 where: { sku }
             });
@@ -160,7 +163,7 @@ async function syncFullMonth(year, month) {
             }
 
             // Reemplazar venta mensual (no acumular)
-            await upsertMonthlySale(producto.id, year, month, data.cantidad, data.montoNeto, false);
+            await upsertMonthlySale(producto.id, year, month, data.cantidad, data.montoNeto, vendedor, false);
             updated++;
         }
 
@@ -224,7 +227,8 @@ async function syncCurrentMonthData(includeToday = false) {
         let updated = 0;
         let productosConVentas = 0; // Contador para productos con ventas
 
-        for (const [sku, data] of monthlySales) {
+        for (const [key, data] of monthlySales) {
+            const { sku, vendedor } = data;
             const producto = await prisma.producto.findUnique({
                 where: { sku }
             });
@@ -236,6 +240,7 @@ async function syncCurrentMonthData(includeToday = false) {
             await prisma.ventaActual.create({
                 data: {
                     productoId: producto.id,
+                    vendedor: vendedor || '',
                     cantidadVendida: data.cantidad,
                     stockActual: stockActual,
                     montoNeto: data.montoNeto

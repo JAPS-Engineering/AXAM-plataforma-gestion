@@ -23,7 +23,8 @@ export default function DashboardPage() {
   const [marca, setMarca] = useState("");
   const [meses, setMeses] = useState(3);
   const [busqueda, setBusqueda] = useState("");
-  const [ocultarCero, setOcultarCero] = useState(false);
+  const [ocultarCero, setOcultarCero] = useState(true);
+  const [salesStatus, setSalesStatus] = useState<'all' | 'with_sales' | 'without_sales'>('all');
   const [estadosSeleccionados, setEstadosSeleccionados] = useState<StockStatus[]>([]);
 
   // Pagination state
@@ -131,9 +132,11 @@ export default function DashboardPage() {
       });
     }
 
-    // Hide zero average
-    if (ocultarCero) {
+    // Unified sales filter logic
+    if (salesStatus === 'with_sales' || ocultarCero) {
       result = result.filter((p) => (p.promedio || 0) > 0);
+    } else if (salesStatus === 'without_sales') {
+      result = result.filter((p) => (p.promedio || 0) === 0);
     }
 
     // Filter by status
@@ -148,7 +151,7 @@ export default function DashboardPage() {
     }
 
     return result;
-  }, [data?.productos, busqueda, ocultarCero, estadosSeleccionados]);
+  }, [data?.productos, busqueda, ocultarCero, salesStatus, estadosSeleccionados]);
 
   // Paginated products
   const { paginatedProducts, totalPages } = useMemo(() => {
@@ -318,6 +321,8 @@ export default function DashboardPage() {
             onBusquedaChange={handleFilterChange(setBusqueda)}
             ocultarCero={ocultarCero}
             onOcultarCeroChange={handleFilterChange(setOcultarCero)}
+            salesStatus={salesStatus}
+            onSalesStatusChange={handleFilterChange(setSalesStatus)}
             estadosSeleccionados={estadosSeleccionados}
             onEstadosChange={handleFilterChange(setEstadosSeleccionados)}
             totalProductos={data?.productos?.length || 0}

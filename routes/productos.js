@@ -10,6 +10,7 @@ const {
     getProductosCompleto,
     getProductosMinimos,
     updateStockMinimo,
+    updateLogistica,
     getHistorialStock
 } = require('../controllers/productosController');
 
@@ -30,6 +31,9 @@ router.get('/historial-stock', getHistorialStock);
 
 // PATCH /api/productos/:id/minimo - Actualizar stock mínimo
 router.patch('/:id/minimo', updateStockMinimo);
+
+// PATCH /api/productos/:id/logistica - Actualizar parámetros logísticos
+router.patch('/:id/logistica', updateLogistica);
 
 module.exports = router;
 

@@ -34,6 +34,7 @@ export default function AnalisisVentasPage() {
     const [meses, setMeses] = useState(6);
     const [busqueda, setBusqueda] = useState("");
     const [ocultarCero, setOcultarCero] = useState(true);
+    const [salesStatus, setSalesStatus] = useState<'all' | 'with_sales' | 'without_sales'>('all');
 
     // Pagination state
     const [currentPage, setCurrentPage] = useState(1);
@@ -62,9 +63,11 @@ export default function AnalisisVentasPage() {
             });
         }
 
-        // Hide zero amount
-        if (ocultarCero) {
-            result = result.filter((p) => p.totalMonto > 0);
+        // Unified sales filter logic
+        if (salesStatus === 'with_sales' || ocultarCero) {
+            result = result.filter((p) => (p.totalMonto || 0) > 0);
+        } else if (salesStatus === 'without_sales') {
+            result = result.filter((p) => (p.totalMonto || 0) === 0);
         }
 
         // Ordenar por Monto Total Descendente (Ranking)
@@ -83,7 +86,7 @@ export default function AnalisisVentasPage() {
             productosFiltered: enrichedResult,
             rankingData: enrichedResult
         };
-    }, [data?.productos, busqueda, ocultarCero]);
+    }, [data?.productos, busqueda, ocultarCero, salesStatus]);
 
     // Paginación
     const { paginatedProducts, totalPages } = useMemo(() => {
@@ -173,6 +176,8 @@ export default function AnalisisVentasPage() {
                         onBusquedaChange={handleFilterChange(setBusqueda)}
                         ocultarCero={ocultarCero}
                         onOcultarCeroChange={handleFilterChange(setOcultarCero)}
+                        salesStatus={salesStatus}
+                        onSalesStatusChange={handleFilterChange(setSalesStatus)}
                         estadosSeleccionados={[]}
                         onEstadosChange={() => { }}
                         totalProductos={data?.meta.totalProductos || 0}

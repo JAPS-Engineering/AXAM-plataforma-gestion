@@ -27,6 +27,8 @@ db.exec(`
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         sku TEXT UNIQUE NOT NULL,
         descripcion TEXT NOT NULL,
+        familia TEXT DEFAULT '',
+        proveedor TEXT DEFAULT '',
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
@@ -36,11 +38,12 @@ db.exec(`
         producto_id INTEGER NOT NULL,
         ano INTEGER NOT NULL,
         mes INTEGER NOT NULL,
+        vendedor TEXT DEFAULT '',
         cantidad_vendida REAL DEFAULT 0,
         monto_neto REAL DEFAULT 0,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(producto_id, ano, mes),
+        UNIQUE(producto_id, ano, mes, vendedor),
         FOREIGN KEY (producto_id) REFERENCES productos(id)
     );
 

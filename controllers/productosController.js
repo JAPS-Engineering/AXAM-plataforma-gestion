@@ -513,6 +513,53 @@ async function updateStockMinimo(req, res) {
     }
 }
 
+/**
+ * PATCH /api/productos/:id/logistica
+ * Actualizar parámetros logísticos (Factor empaque, días importación, origen)
+ */
+async function updateLogistica(req, res) {
+    try {
+        const { id } = req.params;
+        const { factorEmpaque, diasImportacion, origen, stockOptimo } = req.body;
+
+        const productoId = parseInt(id, 10);
+        if (isNaN(productoId)) {
+            return res.status(400).json({ error: 'ID de producto inválido' });
+        }
+
+        const data = {};
+        if (factorEmpaque !== undefined) data.factorEmpaque = parseFloat(factorEmpaque);
+        if (diasImportacion !== undefined) data.diasImportacion = parseInt(diasImportacion, 10);
+        if (origen !== undefined) data.origen = origen;
+        if (stockOptimo !== undefined) data.stockOptimo = stockOptimo === null ? null : parseFloat(stockOptimo);
+
+        const producto = await prisma.producto.update({
+            where: { id: productoId },
+            data,
+            select: {
+                id: true,
+                sku: true,
+                factorEmpaque: true,
+                diasImportacion: true,
+                origen: true,
+                stockOptimo: true
+            }
+        });
+
+        res.json({
+            success: true,
+            producto
+        });
+
+    } catch (error) {
+        logError(`Error en updateLogistica: ${error.message}`);
+        res.status(500).json({
+            error: 'Error al actualizar parámetros logísticos',
+            message: error.message
+        });
+    }
+}
+
 
 /**
  * GET /api/productos/historial-stock
@@ -580,6 +627,7 @@ module.exports = {
     getProductosCompleto,
     getProductosMinimos,
     updateStockMinimo,
+    updateLogistica,
     getHistorialStock
 };
 

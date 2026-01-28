@@ -109,6 +109,7 @@ function extractProductsFromDocument(document) {
         // Mapeo de campos basado en la respuesta real de la API (debugReference.js)
         const sku = item.codigo || item.cod_prod || item.codigo_prod || item.cod_art || item.sku;
         const cantidad = parseFloat(item.cantidad || item.cant || 0);
+        const vendedor = (document.vendedor || document.nom_vendedor || document.vendedor_nombre || 'Sin Vendedor').toString().trim();
 
         let montoNeto = parseFloat(item.monto_neto || item.neto || item.precio_neto || 0);
 
@@ -121,7 +122,8 @@ function extractProductsFromDocument(document) {
             products.push({
                 sku,
                 cantidad,
-                montoNeto
+                montoNeto,
+                vendedor
             });
         }
     }
@@ -140,14 +142,17 @@ function aggregateSalesByProduct(documents) {
         const products = extractProductsFromDocument(doc);
 
         for (const product of products) {
-            if (!salesByProduct.has(product.sku)) {
-                salesByProduct.set(product.sku, {
+            const key = `${product.sku}|${product.vendedor}`;
+            if (!salesByProduct.has(key)) {
+                salesByProduct.set(key, {
+                    sku: product.sku,
+                    vendedor: product.vendedor,
                     cantidad: 0,
                     montoNeto: 0
                 });
             }
 
-            const existing = salesByProduct.get(product.sku);
+            const existing = salesByProduct.get(key);
             existing.cantidad += product.cantidad;
             existing.montoNeto += product.montoNeto;
         }

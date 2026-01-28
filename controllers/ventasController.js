@@ -330,15 +330,15 @@ async function getGraficosAvanzados(req, res) {
     try {
         const mesActualObj = getMesActual();
         const anoActual = mesActualObj.ano;
+        const anoAnterior = anoActual - 1;
 
         // 1. Ventas por Familia (Año Actual)
-        // Usamos queryRaw para agrupar por campo de relación (producto.familia)
         const ventasPorFamiliaResult = await prisma.$queryRaw`
             SELECT 
                 p.familia, 
                 SUM(v.monto_neto) as totalMonto,
                 SUM(v.cantidad_vendida) as totalCantidad
-            FROM ventas_historicas v
+            FROM ventas_mensuales v
             JOIN productos p ON v.producto_id = p.id
             WHERE v.ano = ${anoActual}
             GROUP BY p.familia
@@ -346,29 +346,50 @@ async function getGraficosAvanzados(req, res) {
         `;
 
         // 2. Market Share (Por Proveedor - Año Actual)
+        // Agrupar proveedores vacíos o nulos como 'Sin Proveedor'
         const ventasPorProveedorResult = await prisma.$queryRaw`
             SELECT 
-                p.proveedor, 
+                CASE 
+                    WHEN p.proveedor IS NULL OR p.proveedor = '' THEN 'Sin Proveedor'
+                    ELSE p.proveedor 
+                END as proveedor, 
                 SUM(v.monto_neto) as totalMonto
-            FROM ventas_historicas v
+            FROM ventas_mensuales v
             JOIN productos p ON v.producto_id = p.id
             WHERE v.ano = ${anoActual}
-            GROUP BY p.proveedor
+            GROUP BY proveedor
             ORDER BY totalMonto DESC
         `;
 
-        // 3. Rendimiento Anual (Acumulado por mes del año actual)
-        const rendimientoAnualResult = await prisma.$queryRaw`
+        // 3. Ventas por Vendedor (Año Actual)
+        const ventasPorVendedorResult = await prisma.$queryRaw`
             SELECT 
-                v.mes,
-                SUM(v.monto_neto) as totalMonto
-            FROM ventas_historicas v
+                CASE 
+                    WHEN v.vendedor IS NULL OR v.vendedor = '' THEN 'Sin Vendedor'
+                    ELSE v.vendedor 
+                END as name, 
+                SUM(v.monto_neto) as value
+            FROM ventas_mensuales v
             WHERE v.ano = ${anoActual}
-            GROUP BY v.mes
-            ORDER BY v.mes ASC
+            GROUP BY name
+            ORDER BY value DESC
+            LIMIT 10
         `;
 
-        // Formatear BigInt a Number (Prisma devuelve BigInt para SUM)
+        // 3. Rendimiento Anual (Acumulado por mes)
+        // Obtenemos datos de este año y del anterior
+        const rendimientoAnualResult = await prisma.$queryRaw`
+            SELECT 
+                ano,
+                mes,
+                SUM(monto_neto) as totalMonto
+            FROM ventas_mensuales v
+            WHERE ano IN (${anoActual}, ${anoAnterior})
+            GROUP BY ano, mes
+            ORDER BY ano ASC, mes ASC
+        `;
+
+        // Formatear BigInt
         const formatBigInt = (items) => items.map(item => {
             const newItem = { ...item };
             for (const key in newItem) {
@@ -381,35 +402,48 @@ async function getGraficosAvanzados(req, res) {
 
         const ventasPorFamilia = formatBigInt(ventasPorFamiliaResult);
         const ventasPorProveedor = formatBigInt(ventasPorProveedorResult);
-        const rendimientoAnual = formatBigInt(rendimientoAnualResult);
+        const ventasPorVendedor = formatBigInt(ventasPorVendedorResult);
+        const rendimientoRaw = formatBigInt(rendimientoAnualResult);
 
-        // Calcular totate para porcentajes
+        // Calcular total para porcentajes
         const totalVentaAnual = ventasPorFamilia.reduce((acc, curr) => acc + curr.totalMonto, 0);
 
-        // Agregar porcentajes a Market Share
+        // Market Share
         const marketShare = ventasPorProveedor.map(p => ({
-            name: p.proveedor || 'Sin Proveedor',
+            name: p.proveedor,
             value: p.totalMonto,
             percentage: totalVentaAnual ? ((p.totalMonto / totalVentaAnual) * 100).toFixed(1) : 0
         }));
 
-        // Preparar acumulado anual
-        let acumulado = 0;
-        const rendimientoAcumulado = rendimientoAnual.map(r => {
-            acumulado += r.totalMonto;
-            return {
-                mes: r.mes,
-                mensual: r.totalMonto,
-                acumulado: acumulado
-            };
-        });
+        // Preparar comparativa anual (Mes a Mes)
+        const comparativaAnual = [];
+        let acumActual = 0;
+        let acumAnterior = 0;
+
+        for (let m = 1; m <= 12; m++) {
+            const valActual = rendimientoRaw.find(r => r.ano === anoActual && r.mes === m)?.totalMonto || 0;
+            const valAnterior = rendimientoRaw.find(r => r.ano === anoAnterior && r.mes === m)?.totalMonto || 0;
+
+            acumActual += valActual;
+            acumAnterior += valAnterior;
+
+            comparativaAnual.push({
+                mes: m,
+                mensualActual: valActual,
+                acumuladoActual: acumActual,
+                mensualAnterior: valAnterior,
+                acumuladoAnterior: acumAnterior
+            });
+        }
 
         res.json({
             ventasPorFamilia,
-            marketShare, // Por proveedor
-            rendimientoAnual: rendimientoAcumulado,
+            marketShare,
+            ventasPorVendedor,
+            rendimientoAnual: comparativaAnual,
             meta: {
-                ano: anoActual,
+                anoActual,
+                anoAnterior,
                 totalVentaAnual
             }
         });

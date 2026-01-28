@@ -16,7 +16,7 @@ function getProductIdBySku(db, sku) {
 /**
  * Guardar o actualizar venta mensual
  */
-function saveVentaMensual(db, productoId, ano, mes, cantidad, montoNeto) {
+function saveVentaMensual(db, productoId, ano, mes, cantidad, montoNeto, vendedor = '') {
     try {
         // Intentar actualizar primero
         const update = db.prepare(`
@@ -24,18 +24,18 @@ function saveVentaMensual(db, productoId, ano, mes, cantidad, montoNeto) {
             SET cantidad_vendida = cantidad_vendida + ?,
                 monto_neto = monto_neto + ?,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE producto_id = ? AND ano = ? AND mes = ?
+            WHERE producto_id = ? AND ano = ? AND mes = ? AND vendedor = ?
         `);
-        
-        const result = update.run(cantidad, montoNeto, productoId, ano, mes);
-        
+
+        const result = update.run(cantidad, montoNeto, productoId, ano, mes, vendedor || '');
+
         // Si no se actualizó nada, insertar
         if (result.changes === 0) {
             const insert = db.prepare(`
-                INSERT INTO ventas_mensuales (producto_id, ano, mes, cantidad_vendida, monto_neto)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO ventas_mensuales (producto_id, ano, mes, vendedor, cantidad_vendida, monto_neto)
+                VALUES (?, ?, ?, ?, ?, ?)
             `);
-            insert.run(productoId, ano, mes, cantidad, montoNeto);
+            insert.run(productoId, ano, mes, vendedor || '', cantidad, montoNeto);
         }
     } catch (error) {
         throw new Error(`Error al guardar venta: ${error.message}`);
@@ -48,30 +48,33 @@ function saveVentaMensual(db, productoId, ano, mes, cantidad, montoNeto) {
 function saveVentasMensuales(db, ventasPorProducto, ano, mes) {
     let guardadas = 0;
     let noEncontrados = 0;
-    
-    for (const [sku, venta] of Object.entries(ventasPorProducto)) {
+
+    for (const [key, venta] of Object.entries(ventasPorProducto)) {
+        // La clave ahora es "sku|vendedor"
+        const [sku, vendedor] = key.split('|');
         const productoId = getProductIdBySku(db, sku);
-        
+
         if (!productoId) {
             noEncontrados++;
             continue;
         }
-        
+
         saveVentaMensual(
             db,
             productoId,
             ano,
             mes,
             venta.cantidad,
-            venta.montoNeto
+            venta.montoNeto,
+            vendedor
         );
         guardadas++;
     }
-    
+
     if (noEncontrados > 0) {
         logWarning(`  ${noEncontrados} productos no encontrados en la BD (ejecuta sync:productos primero)`);
     }
-    
+
     return { guardadas, noEncontrados };
 }
 

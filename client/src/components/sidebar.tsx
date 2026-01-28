@@ -21,6 +21,7 @@ export function Sidebar({ className }: SidebarProps) {
         { href: "/ventas", label: "Análisis Ventas", icon: TrendingUp },
         { href: "/ventas/graficos", label: "Gráficos", icon: BarChart3 },
         { href: "/historial", label: "Historial de Sync", icon: History },
+        { href: "/logistica", label: "Configuración Logística", icon: Package2 },
     ];
 
     return (

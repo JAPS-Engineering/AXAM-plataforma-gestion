@@ -168,6 +168,8 @@ interface FiltersBarProps {
     productosVisibles: number;
     className?: string;
     hideStockStatus?: boolean;
+    salesStatus: 'all' | 'with_sales' | 'without_sales';
+    onSalesStatusChange: (value: 'all' | 'with_sales' | 'without_sales') => void;
 }
 
 export function FiltersBar(props: FiltersBarProps) {
@@ -185,6 +187,8 @@ export function FiltersBar(props: FiltersBarProps) {
         totalProductos,
         productosVisibles,
         className,
+        salesStatus,
+        onSalesStatusChange,
     } = props;
 
     return (
@@ -259,6 +263,23 @@ export function FiltersBar(props: FiltersBarProps) {
                             </button>
                         )}
                     </div>
+                </div>
+
+                {/* Filtro de Ventas */}
+                <div className="flex flex-col gap-1">
+                    <label htmlFor="salesStatus" className="text-xs font-medium text-slate-500">
+                        Ventas
+                    </label>
+                    <select
+                        id="salesStatus"
+                        value={salesStatus}
+                        onChange={(e) => onSalesStatusChange(e.target.value as any)}
+                        className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    >
+                        <option value="all">Todos</option>
+                        <option value="with_sales">Con Ventas</option>
+                        <option value="without_sales">Sin Ventas</option>
+                    </select>
                 </div>
 
                 {/* Checkbox Ocultar cero */}

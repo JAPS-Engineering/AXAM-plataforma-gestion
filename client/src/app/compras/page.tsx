@@ -87,6 +87,8 @@ export default function AnalisisPage() {
     const [mesesHistorico, setMesesHistorico] = useState(6);
     const [mesesCobertura, setMesesCobertura] = useState(2);
     const [soloEnQuiebre, setSoloEnQuiebre] = useState(false);
+    const [ocultarCero, setOcultarCero] = useState(true);
+    const [salesStatus, setSalesStatus] = useState<'all' | 'with_sales' | 'without_sales'>('all');
 
     // Estados de datos
     const [data, setData] = useState<ApiResponse | null>(null);
@@ -166,17 +168,28 @@ export default function AnalisisPage() {
         }
     }, [calcularSugerencias, proveedorSeleccionado]);
 
-    // Filtrar por búsqueda
     const itemsFiltrados = useMemo(() => {
         if (!data?.items) return [];
-        if (!search.trim()) return data.items;
+        let result = data.items;
 
-        const term = search.toLowerCase();
-        return data.items.filter(item =>
-            item.sku.toLowerCase().includes(term) ||
-            item.descripcion.toLowerCase().includes(term)
-        );
-    }, [data?.items, search]);
+        // Search filter
+        if (search.trim()) {
+            const term = search.toLowerCase();
+            result = result.filter(item =>
+                item.sku.toLowerCase().includes(term) ||
+                item.descripcion.toLowerCase().includes(term)
+            );
+        }
+
+        // Unified sales filter logic
+        if (salesStatus === 'with_sales' || ocultarCero) {
+            result = result.filter((p) => (p.promedioVenta || 0) > 0);
+        } else if (salesStatus === 'without_sales') {
+            result = result.filter((p) => (p.promedioVenta || 0) === 0);
+        }
+
+        return result;
+    }, [data?.items, search, salesStatus, ocultarCero]);
 
     // Guardar valor de A Comprar
     const handleSaveCompra = async (item: SuggestedPurchase) => {
@@ -345,6 +358,35 @@ export default function AnalisisPage() {
                                     <span className="text-sm text-slate-700">Solo bajo mínimo</span>
                                 </label>
                             </div>
+
+                            {/* Ocultar sin ventas */}
+                            <div className="flex items-end">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={ocultarCero}
+                                        onChange={(e) => setOcultarCero(e.target.checked)}
+                                        className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                                    />
+                                    <span className="text-sm text-slate-700">Ocultar sin ventas</span>
+                                </label>
+                            </div>
+
+                            {/* Filtro de Ventas */}
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">
+                                    Filtrar Ventas
+                                </label>
+                                <select
+                                    value={salesStatus}
+                                    onChange={(e) => setSalesStatus(e.target.value as any)}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                >
+                                    <option value="all">Todos</option>
+                                    <option value="with_sales">Con Ventas</option>
+                                    <option value="without_sales">Sin Ventas</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
 
@@ -382,26 +424,28 @@ export default function AnalisisPage() {
                     </div>
 
                     {/* Resumen */}
-                    {data && (
-                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
-                            <div className="flex items-center gap-6">
-                                <div className="text-center">
-                                    <p className="text-2xl font-bold text-slate-900">{data.totalItems}</p>
-                                    <p className="text-sm text-slate-500">Productos analizados</p>
-                                </div>
-                                <div className="text-center">
-                                    <p className="text-2xl font-bold text-indigo-600">
-                                        {data.totalUnidades.toLocaleString("es-CL")}
-                                    </p>
-                                    <p className="text-sm text-slate-500">Unidades Sugeridas</p>
-                                </div>
-                                <div className="text-center">
-                                    <p className="text-2xl font-bold text-emerald-600">{mesesCobertura}</p>
-                                    <p className="text-sm text-slate-500">Meses Cobertura</p>
+                    {
+                        data && (
+                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
+                                <div className="flex items-center gap-6">
+                                    <div className="text-center">
+                                        <p className="text-2xl font-bold text-slate-900">{data.totalItems}</p>
+                                        <p className="text-sm text-slate-500">Productos analizados</p>
+                                    </div>
+                                    <div className="text-center">
+                                        <p className="text-2xl font-bold text-indigo-600">
+                                            {data.totalUnidades.toLocaleString("es-CL")}
+                                        </p>
+                                        <p className="text-sm text-slate-500">Unidades Sugeridas</p>
+                                    </div>
+                                    <div className="text-center">
+                                        <p className="text-2xl font-bold text-emerald-600">{mesesCobertura}</p>
+                                        <p className="text-sm text-slate-500">Meses Cobertura</p>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    )}
+                        )
+                    }
 
                     {/* Búsqueda */}
                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-4">
@@ -573,8 +617,8 @@ export default function AnalisisPage() {
                             </div>
                         )}
                     </div>
-                </main>
-            </div>
-        </div>
+                </main >
+            </div >
+        </div >
     );
 }

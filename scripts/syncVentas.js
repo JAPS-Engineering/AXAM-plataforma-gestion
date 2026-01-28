@@ -53,7 +53,7 @@ function shouldExcludeFAVE(fave) {
  * Procesar un lote de documentos y acumular ventas por producto
  */
 async function processDocumentBatch(docs, tipoDoc) {
-    const ventasPorProducto = {}; // SKU -> { cantidad, montoNeto }
+    const ventasPorProducto = {}; // "SKU|Vendedor" -> { cantidad, montoNeto }
     let procesados = 0;
     let excluidos = 0;
     let conVentas = 0;
@@ -99,15 +99,17 @@ async function processDocumentBatch(docs, tipoDoc) {
             }
 
             productosExtraidos = extractProductosFromFAVE(docDetails);
+            const vendedor = (docDetails.vendedor || docDetails.nom_vendedor || docDetails.vendedor_nombre || 'Sin Vendedor').toString().trim();
 
             if (productosExtraidos.length > 0) {
                 conVentas++;
                 productosExtraidos.forEach(p => {
-                    if (!ventasPorProducto[p.sku]) {
-                        ventasPorProducto[p.sku] = { cantidad: 0, montoNeto: 0 };
+                    const key = `${p.sku}|${vendedor}`;
+                    if (!ventasPorProducto[key]) {
+                        ventasPorProducto[key] = { cantidad: 0, montoNeto: 0 };
                     }
-                    ventasPorProducto[p.sku].cantidad += p.cantidad;
-                    ventasPorProducto[p.sku].montoNeto += p.montoNeto;
+                    ventasPorProducto[key].cantidad += p.cantidad;
+                    ventasPorProducto[key].montoNeto += p.montoNeto;
                 });
             }
 
@@ -161,10 +163,10 @@ async function syncMonth(db, dateDate) {
     // 4. Unificar Ventas
     const totalVentas = {};
     const merge = (source) => {
-        for (const [sku, data] of Object.entries(source)) {
-            if (!totalVentas[sku]) totalVentas[sku] = { cantidad: 0, montoNeto: 0 };
-            totalVentas[sku].cantidad += data.cantidad;
-            totalVentas[sku].montoNeto += data.montoNeto;
+        for (const [key, data] of Object.entries(source)) {
+            if (!totalVentas[key]) totalVentas[key] = { cantidad: 0, montoNeto: 0 };
+            totalVentas[key].cantidad += data.cantidad;
+            totalVentas[key].montoNeto += data.montoNeto;
         }
     };
 

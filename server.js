@@ -61,14 +61,14 @@ if (isProduction) {
     // En producción: servir el build estático de Next.js
     const staticDir = path.join(__dirname, 'client/out');
 
-    app.use(express.static(staticDir));
+    app.use(express.static(staticDir, { extensions: ['html'] }));
 
     // Fallback para SPA (Single Page Application)
     // Cualquier ruta no manejada por API devuelve index.html
     // Usamos app.use como fallback universal (funciona en Express 4 y 5)
     app.use((req, res) => {
-        // Solo servir index.html para peticiones GET, para otras devolver 404
-        if (req.method === 'GET') {
+        // Solo servir index.html para peticiones GET o HEAD, para otras devolver 404
+        if (req.method === 'GET' || req.method === 'HEAD') {
             res.sendFile(path.join(staticDir, 'index.html'));
         } else {
             res.status(404).json({ error: 'Ruta no encontrada' });

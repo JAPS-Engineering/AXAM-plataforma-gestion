@@ -105,9 +105,12 @@ async function processFAVE(fave) {
             }
         }
 
+        const vendedor = (faveDetails.vendedor || faveDetails.nom_vendedor || faveDetails.vendedor_nombre || 'Sin Vendedor').toString().trim();
+
         return {
             success: productos.length > 0,
             productos,
+            vendedor,
             error: productos.length === 0 ? 'Sin productos extraídos' : null
         };
 
@@ -218,8 +221,10 @@ async function actualizarVentasActuales(ventasPorProducto) {
     let noEncontrados = 0;
     let errores = 0;
 
-    for (const [sku, venta] of Object.entries(ventasPorProducto)) {
+    for (const [key, venta] of Object.entries(ventasPorProducto)) {
         try {
+            const [sku, vendedor] = key.split('|');
+
             // Buscar producto por SKU
             const producto = await prisma.producto.findUnique({
                 where: { sku }
@@ -230,10 +235,13 @@ async function actualizarVentasActuales(ventasPorProducto) {
                 continue;
             }
 
-            // Actualizar o crear venta actual
-            // Sumamos las cantidades porque este script puede ejecutarse varias veces
             await prisma.ventaActual.upsert({
-                where: { productoId: producto.id },
+                where: {
+                    productoId_vendedor: {
+                        productoId: producto.id,
+                        vendedor: vendedor || ''
+                    }
+                },
                 update: {
                     cantidadVendida: {
                         increment: venta.cantidad
@@ -244,6 +252,7 @@ async function actualizarVentasActuales(ventasPorProducto) {
                 },
                 create: {
                     productoId: producto.id,
+                    vendedor: vendedor || '',
                     cantidadVendida: venta.cantidad,
                     montoNeto: venta.montoNeto,
                     stockActual: 0 // El stock se actualiza con el script de stock
@@ -253,7 +262,7 @@ async function actualizarVentasActuales(ventasPorProducto) {
             actualizadas++;
         } catch (error) {
             errores++;
-            logError(`Error al actualizar venta actual de ${sku}: ${error.message}`);
+            logError(`Error al actualizar venta actual: ${error.message}`);
         }
     }
 
@@ -310,16 +319,18 @@ async function main() {
 
         // Agregar productos a ventasPorProducto
         for (const resultado of resultados) {
+            const vendedor = resultado.vendedor || 'Sin Vendedor';
             if (resultado.success && resultado.productos.length > 0) {
                 for (const producto of resultado.productos) {
-                    if (!ventasPorProducto[producto.sku]) {
-                        ventasPorProducto[producto.sku] = {
+                    const key = `${producto.sku}|${vendedor}`;
+                    if (!ventasPorProducto[key]) {
+                        ventasPorProducto[key] = {
                             cantidad: 0,
                             montoNeto: 0
                         };
                     }
-                    ventasPorProducto[producto.sku].cantidad += producto.cantidad;
-                    ventasPorProducto[producto.sku].montoNeto += producto.montoNeto;
+                    ventasPorProducto[key].cantidad += producto.cantidad;
+                    ventasPorProducto[key].montoNeto += producto.montoNeto;
                     productosProcesados++;
                 }
                 procesadas++;

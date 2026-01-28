@@ -66,13 +66,28 @@ function extractProductInfo(product) {
         product.desc ||
         '';
 
-    return { sku: sku.trim(), descripcion: descripcion.trim() };
+    const familia = product.familia ||
+        product.cod_familia ||
+        product.tipo ||
+        '';
+
+    const proveedor = product.proveedor ||
+        product.nombre_proveedor ||
+        product.cod_proveedor ||
+        '';
+
+    return {
+        sku: sku.trim(),
+        descripcion: descripcion.trim(),
+        familia: familia.trim(),
+        proveedor: proveedor.trim()
+    };
 }
 
 /**
  * Guardar o actualizar producto en la base de datos
  */
-function saveProduct(db, sku, descripcion) {
+function saveProduct(db, sku, descripcion, familia = '', proveedor = '') {
     if (!sku || !descripcion) {
         return false;
     }
@@ -81,19 +96,19 @@ function saveProduct(db, sku, descripcion) {
         // Intentar actualizar primero
         const update = db.prepare(`
             UPDATE productos 
-            SET descripcion = ?, updated_at = CURRENT_TIMESTAMP 
+            SET descripcion = ?, familia = ?, proveedor = ?, updated_at = CURRENT_TIMESTAMP 
             WHERE sku = ?
         `);
 
-        const result = update.run(descripcion, sku);
+        const result = update.run(descripcion, familia, proveedor, sku);
 
         // Si no se actualizó nada, insertar
         if (result.changes === 0) {
             const insert = db.prepare(`
-                INSERT INTO productos (sku, descripcion) 
-                VALUES (?, ?)
+                INSERT INTO productos (sku, descripcion, familia, proveedor, updated_at) 
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
             `);
-            insert.run(sku, descripcion);
+            insert.run(sku, descripcion, familia, proveedor);
             return true; // Nuevo producto
         }
 
@@ -201,18 +216,7 @@ async function main() {
                 continue;
             }
 
-            // Save (Upsert)
-            // Nota: Aquí deberíamos guardar también Familia y Proveedor si la BD lo soporta en este script.
-            // El script original solo guardaba SKU y Descripcion.
-            // Si queremos familia/proveedor, hay que actualizar `saveProduct`.
-            // Dado que el requerimiento es cambiar el filtro, mantengo la lógica de guardado actual
-            // PERO la DB tiene columnas familia/proveedor según schema.prisma.
-            // Sería bueno actualizarlas ahora.
-
-            // FIXME: El script original `saveProduct` solo tomaba `sku` y `descripcion`.
-            // Deberíamos pasar el objeto completo si queremos expandir, pero por ahora respetamos el scope del cambio: FILTRO.
-
-            const esNuevo = saveProduct(db, sku, descripcion);
+            const esNuevo = saveProduct(db, sku, descripcion, product.familia || '', product.proveedor || '');
             if (esNuevo) {
                 nuevos++;
             } else {

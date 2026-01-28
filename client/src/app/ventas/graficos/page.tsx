@@ -157,7 +157,7 @@ export default function GraficosVentasPage() {
                                                 <PieIcon className="h-5 w-5 text-indigo-500" />
                                                 Market Share Interno
                                             </h3>
-                                            <p className="text-xs text-slate-500">Participación por Familia de Proveedores ({advancedData?.meta.ano})</p>
+                                            <p className="text-xs text-slate-500">Participación por Familia de Proveedores ({advancedData?.meta.anoActual})</p>
                                         </div>
                                     </div>
                                     <div className="h-[350px] w-full flex items-center justify-center">
@@ -202,7 +202,7 @@ export default function GraficosVentasPage() {
                                                 <BarChart3 className="h-5 w-5 text-indigo-500" />
                                                 Ranking por Familia
                                             </h3>
-                                            <p className="text-xs text-slate-500">Ventas acumuladas del año actual ({advancedData?.meta.ano})</p>
+                                            <p className="text-xs text-slate-500">Ventas acumuladas del año actual ({advancedData?.meta.anoActual})</p>
                                         </div>
                                     </div>
                                     <div className="h-[350px] w-full">
@@ -249,15 +249,25 @@ export default function GraficosVentasPage() {
                                 </div>
                             </div>
 
-                            {/* Seccion 3: Rendimiento Anual Acumulado */}
+                            {/* Seccion 3: Rendimiento Anual Acumulado - COMPARATIVA 2025 vs 2026 */}
                             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                                 <div className="flex items-center justify-between mb-6">
                                     <div>
                                         <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                                             <Calendar className="h-5 w-5 text-indigo-500" />
-                                            Rendimiento Anual Acumulado
+                                            Rendimiento Anual Acumulado (Comparativa)
                                         </h3>
-                                        <p className="text-xs text-slate-500">Progreso de ventas acumuladas durante {advancedData?.meta.ano}</p>
+                                        <p className="text-xs text-slate-500">Progreso de ventas acumuladas: {advancedData?.meta.anoAnterior} vs {advancedData?.meta.anoActual}</p>
+                                    </div>
+                                    <div className="flex items-center gap-4 text-xs">
+                                        <div className="flex items-center gap-1">
+                                            <div className="w-3 h-3 bg-indigo-600 rounded-full"></div>
+                                            <span className="font-bold text-slate-700">{advancedData?.meta.anoActual}</span>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <div className="w-3 h-3 bg-slate-300 rounded-full border border-slate-400 border-dashed"></div>
+                                            <span className="text-slate-500">{advancedData?.meta.anoAnterior}</span>
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="h-[400px] w-full">
@@ -273,7 +283,7 @@ export default function GraficosVentasPage() {
                                                 fontSize={12}
                                                 stroke="#94a3b8"
                                                 tickLine={false}
-                                                axisLine={false}
+                                                axisLine={true}
                                             />
                                             <YAxis
                                                 yAxisId="left"
@@ -291,17 +301,41 @@ export default function GraficosVentasPage() {
                                                 }}
                                                 formatter={(value: any, name: any) => [
                                                     formatTooltipCLP(Number(value)),
-                                                    name === "acumulado" ? "Acumulado Anual" : "Venta Mensual"
+                                                    name
                                                 ]}
                                                 contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
                                             />
                                             <Legend verticalAlign="top" height={36} />
-                                            <Bar yAxisId="left" dataKey="mensual" name="Venta Mensual" fill="#cbd5e1" radius={[4, 4, 0, 0]} barSize={20} />
+
+                                            {/* Barras de venta mensual actual - (Estilo similar a la imagen) */}
+                                            <Bar
+                                                yAxisId="left"
+                                                dataKey="mensualActual"
+                                                name={`Venta ${advancedData?.meta.anoActual}`}
+                                                fill="#3b82f6"
+                                                radius={[4, 4, 0, 0]}
+                                                barSize={30}
+                                            />
+
+                                            {/* Línea Acumulada Año Anterior (Punteada) */}
                                             <Line
                                                 yAxisId="left"
                                                 type="monotone"
-                                                dataKey="acumulado"
-                                                name="Acumulado Anual"
+                                                dataKey="acumuladoAnterior"
+                                                name={`Acumulado ${advancedData?.meta.anoAnterior}`}
+                                                stroke="#94a3b8"
+                                                strokeWidth={2}
+                                                strokeDasharray="5 5"
+                                                dot={false}
+                                                activeDot={{ r: 4 }}
+                                            />
+
+                                            {/* Línea Acumulada Año Actual (Sólida) */}
+                                            <Line
+                                                yAxisId="left"
+                                                type="monotone"
+                                                dataKey="acumuladoActual"
+                                                name={`Acumulado ${advancedData?.meta.anoActual}`}
                                                 stroke="#4f46e5"
                                                 strokeWidth={3}
                                                 dot={{ r: 4, fill: '#4f46e5', strokeWidth: 2, stroke: '#fff' }}

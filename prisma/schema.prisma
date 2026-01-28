@@ -48,6 +48,7 @@ model VentaHistorica {
   productoId      Int      @map("producto_id")
   ano             Int
   mes             Int      // 1-12
+  vendedor        String   @default("")
   cantidadVendida Float    @default(0) @map("cantidad_vendida")
   montoNeto       Float    @default(0) @map("monto_neto")
   createdAt       DateTime @default(now()) @map("created_at")
@@ -55,16 +56,17 @@ model VentaHistorica {
 
   producto Producto @relation(fields: [productoId], references: [id], onDelete: Cascade)
 
-  @@unique([productoId, ano, mes])
+  @@unique([productoId, ano, mes, vendedor])
   @@index([productoId])
   @@index([ano, mes])
   @@index([productoId, ano, mes])
-  @@map("ventas_historicas")
+  @@map("ventas_mensuales")
 }
 
 model VentaActual {
   id              Int      @id @default(autoincrement())
-  productoId      Int      @unique @map("producto_id")
+  productoId      Int      @map("producto_id")
+  vendedor        String   @default("")
   cantidadVendida Float    @default(0) @map("cantidad_vendida")
   stockActual     Float    @default(0) @map("stock_actual")
   montoNeto       Float    @default(0) @map("monto_neto")
@@ -73,6 +75,7 @@ model VentaActual {
 
   producto Producto @relation(fields: [productoId], references: [id], onDelete: Cascade)
 
+  @@unique([productoId, vendedor])
   @@index([productoId])
   @@map("ventas_actuales")
 }

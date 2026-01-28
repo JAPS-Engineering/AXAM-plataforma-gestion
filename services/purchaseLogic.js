@@ -74,7 +74,7 @@ async function calculateSuggestedPurchase(sku, options = {}) {
             descripcion: producto.descripcion,
             familia: producto.familia,
             stockActual,
-            stockMinimo,
+            stockMinimo: producto.stockMinimo,
             promedioVenta: 0,
             tendencia: 0,
             prediccionProximoMes: 0,
@@ -150,9 +150,9 @@ async function calculateSuggestedPurchase(sku, options = {}) {
         proveedor: producto.proveedor,
         origen: producto.origen,
         stockActual,
-        stockMinimo,
+        stockMinimo: producto.stockMinimo,
         stockOptimo: producto.stockOptimo,
-        promedioVenta: parseFloat(promedioVenta.toFixed(2)),
+        promedioVenta: Math.round(promedioVenta),
         tendencia: parseFloat(tendencia.toFixed(2)),
         prediccionProximoMes: Math.round(prediccionProximoMes),
         cantidadSugerida,
@@ -296,19 +296,15 @@ async function generateSuggestedPurchases(filtroValor, options = {}) {
         select: { sku: true }
     });
 
-    const sugerencias = [];
-
-    for (const producto of productos) {
-        const sugerencia = await calculateSuggestedPurchase(producto.sku, {
-            algoritmo,
-            meses,
-            mesesCobertura
-        });
-
-        if (sugerencia.cantidadSugerida > 0) {
-            sugerencias.push(sugerencia);
-        }
-    }
+    const sugerencias = await Promise.all(
+        productos.map(producto =>
+            calculateSuggestedPurchase(producto.sku, {
+                algoritmo,
+                meses,
+                mesesCobertura
+            })
+        )
+    );
 
     return sugerencias.sort((a, b) => b.cantidadSugerida - a.cantidadSugerida);
 }

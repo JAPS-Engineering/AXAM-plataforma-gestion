@@ -209,8 +209,10 @@ export interface MarketShareRow {
 
 export interface RendimientoAnualRow {
     mes: number;
-    mensual: number;
-    acumulado: number;
+    mensualActual: number;
+    acumuladoActual: number;
+    mensualAnterior: number;
+    acumuladoAnterior: number;
 }
 
 export interface GraficosAvanzadosResponse {
@@ -218,7 +220,8 @@ export interface GraficosAvanzadosResponse {
     marketShare: MarketShareRow[];
     rendimientoAnual: RendimientoAnualRow[];
     meta: {
-        ano: number;
+        anoActual: number;
+        anoAnterior: number;
         totalVentaAnual: number;
     };
 }
@@ -307,4 +310,15 @@ export interface StockHistoryResponse {
 export async function fetchStockHistory(sku: string, dias: number = 30): Promise<StockHistoryResponse> {
     const { data } = await api.get<StockHistoryResponse>(`/productos/historial-stock?sku=${sku}&dias=${dias}`);
     return data;
+}
+
+export interface LogisticaUpdate {
+    factorEmpaque?: number;
+    diasImportacion?: number;
+    origen?: string;
+    stockOptimo?: number | null;
+}
+
+export async function updateLogistica(id: number, data: LogisticaUpdate): Promise<void> {
+    await api.patch(`/productos/${id}/logistica`, data);
 }
