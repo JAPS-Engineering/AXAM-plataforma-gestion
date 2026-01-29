@@ -6,21 +6,17 @@ services:
     container_name: axam-dashboard
     restart: unless-stopped
     ports:
-      - "3001:3000" # Puerto externo:interno (cambiar 3001 según tu setup)
+      - "3001:3000"
     environment:
       - NODE_ENV=production
       - TZ=America/Santiago
-      # Configurar la URL de la base de datos externa
       - DATABASE_URL=${DATABASE_URL}
-      # Variables del ERP (Manager+)
+      - DB_PATH=${DB_PATH}
       - ERP_BASE_URL=${ERP_BASE_URL}
       - ERP_USERNAME=${ERP_USERNAME}
       - ERP_PASSWORD=${ERP_PASSWORD}
       - RUT_EMPRESA=${RUT_EMPRESA}
     volumes:
-      # Persistir base de datos SQLite local
-      - ./data:/app/data
-      # Persistir base de datos SQLite local
       - ./data:/app/data
     networks:
       - axam-network

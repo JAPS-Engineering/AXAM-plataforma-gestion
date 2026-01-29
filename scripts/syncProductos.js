@@ -192,31 +192,30 @@ async function main() {
         let nuevos = 0;
         let actualizados = 0;
         let omitidos = 0;
-        let filtrarados = 0; // Fuera de la lista
-
-        // Usamos una transacción para integridad si fuera necesario, pero la librería sqlite3 sync es simple.
-
-        // Opcional: Marcar productos que ya no están en la lista como inactivos? 
-        // Por ahora, el requerimiento es "solo guardar los de la lista".
-        // Si ya existen en DB y salen de la lista, no los tocamos (quedan históricos) o los borramos?
-        // Asumiremos que solo actualizamos los de la lista para no borrar historial inadvertidamente.
+        let filtrados = 0;
+        const familiasFound = new Map();
 
         for (let i = 0; i < allProducts.length; i++) {
             const product = allProducts[i];
-            const { sku, descripcion } = extractProductInfo(product);
+            const { sku, descripcion, familia, proveedor } = extractProductInfo(product);
 
             if (!sku || !descripcion) {
                 omitidos++;
                 continue;
             }
 
+            // Contar familias encontradas en el ERP (solo para log)
+            if (familia) {
+                familiasFound.set(familia, (familiasFound.get(familia) || 0) + 1);
+            }
+
             // CHECK WHITE LIST
             if (!whiteList.has(sku)) {
-                filtrarados++;
+                filtrados++;
                 continue;
             }
 
-            const esNuevo = saveProduct(db, sku, descripcion, product.familia || '', product.proveedor || '');
+            const esNuevo = saveProduct(db, sku, descripcion, familia, proveedor);
             if (esNuevo) {
                 nuevos++;
             } else {
@@ -228,12 +227,21 @@ async function main() {
 
         console.log('\n');
         logSection('RESUMEN');
+        logInfo(`Familias encontradas en ERP: ${familiasFound.size}`);
+        if (familiasFound.size > 0) {
+            logInfo('Top 5 familias por cantidad de productos:');
+            Array.from(familiasFound.entries())
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5)
+                .forEach(([f, count]) => logInfo(`  - ${f}: ${count} productos`));
+        }
+
         logSuccess(`Total en White List (Lista 652): ${whiteList.size}`);
         logInfo(`Total en ERP: ${allProducts.length}`);
         logInfo(`Procesados (Coincidencia): ${nuevos + actualizados}`);
         logInfo(`  - Nuevos: ${nuevos}`);
         logInfo(`  - Actualizados: ${actualizados}`);
-        logInfo(`  - Filtrados (Fuera de lista): ${filtrarados}`);
+        logInfo(`  - Filtrados (Fuera de lista): ${filtrados}`);
 
         // Mostrar estadísticas de la BD
         const totalBD = db.prepare('SELECT COUNT(*) as count FROM productos').get();

@@ -345,20 +345,20 @@ async function getGraficosAvanzados(req, res) {
             ORDER BY totalMonto DESC
         `;
 
-        // 2. Market Share (Por Proveedor - Año Actual)
-        // Agrupar proveedores vacíos o nulos como 'Sin Proveedor'
-        const ventasPorProveedorResult = await prisma.$queryRaw`
+        // 2. Market Share (Por Familia - Año Actual)
+        // Agrupar familias vacías o nulas como 'Sin Familia'
+        const ventasPorFamiliaShareResult = await prisma.$queryRaw`
             SELECT 
                 CASE 
-                    WHEN p.proveedor IS NULL OR p.proveedor = '' THEN 'Sin Proveedor'
-                    ELSE p.proveedor 
-                END as proveedor, 
-                SUM(v.monto_neto) as totalMonto
+                    WHEN p.familia IS NULL OR p.familia = '' THEN 'Sin Familia'
+                    ELSE p.familia 
+                END as name, 
+                SUM(v.monto_neto) as value
             FROM ventas_mensuales v
             JOIN productos p ON v.producto_id = p.id
             WHERE v.ano = ${anoActual}
-            GROUP BY proveedor
-            ORDER BY totalMonto DESC
+            GROUP BY name
+            ORDER BY value DESC
         `;
 
         // 3. Ventas por Vendedor (Año Actual)
@@ -401,7 +401,7 @@ async function getGraficosAvanzados(req, res) {
         });
 
         const ventasPorFamilia = formatBigInt(ventasPorFamiliaResult);
-        const ventasPorProveedor = formatBigInt(ventasPorProveedorResult);
+        const marketShareRaw = formatBigInt(ventasPorFamiliaShareResult);
         const ventasPorVendedor = formatBigInt(ventasPorVendedorResult);
         const rendimientoRaw = formatBigInt(rendimientoAnualResult);
 
@@ -409,10 +409,10 @@ async function getGraficosAvanzados(req, res) {
         const totalVentaAnual = ventasPorFamilia.reduce((acc, curr) => acc + curr.totalMonto, 0);
 
         // Market Share
-        const marketShare = ventasPorProveedor.map(p => ({
-            name: p.proveedor,
-            value: p.totalMonto,
-            percentage: totalVentaAnual ? ((p.totalMonto / totalVentaAnual) * 100).toFixed(1) : 0
+        const marketShare = marketShareRaw.map(f => ({
+            name: f.name,
+            value: f.value,
+            percentage: totalVentaAnual ? ((f.value / totalVentaAnual) * 100).toFixed(1) : 0
         }));
 
         // Preparar comparativa anual (Mes a Mes)
