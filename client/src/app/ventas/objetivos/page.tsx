@@ -29,7 +29,7 @@ const formatTooltipCLP = (value: number) => {
 export default function ObjetivosVendedoresPage() {
     const { data: advancedData, isLoading: isLoadingAdv, error } = useQuery({
         queryKey: ["graficos-avanzados"],
-        queryFn: fetchGraficosAvanzados,
+        queryFn: () => fetchGraficosAvanzados(),
     });
 
     return (

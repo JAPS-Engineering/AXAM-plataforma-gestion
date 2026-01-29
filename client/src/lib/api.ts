@@ -189,8 +189,25 @@ export interface VentasResumenResponse {
     meta: any;
 }
 
-export async function fetchVentasResumen(meses: number): Promise<VentasResumenResponse> {
-    const { data } = await api.get<VentasResumenResponse>(`/ventas/resumen?meses=${meses}`);
+
+export interface DateRangeParams {
+    meses?: number;
+    start?: string; // YYYY-MM
+    end?: string;   // YYYY-MM
+}
+
+export async function fetchVentasResumen(params: number | DateRangeParams): Promise<VentasResumenResponse> {
+    const query = new URLSearchParams();
+
+    if (typeof params === 'number') {
+        query.append("meses", params.toString());
+    } else {
+        if (params.meses) query.append("meses", params.meses.toString());
+        if (params.start) query.append("start", params.start);
+        if (params.end) query.append("end", params.end);
+    }
+
+    const { data } = await api.get<VentasResumenResponse>(`/ventas/resumen?${query.toString()}`);
     return data;
 }
 
@@ -223,12 +240,17 @@ export interface GraficosAvanzadosResponse {
     meta: {
         anoActual: number;
         anoAnterior: number;
-        totalVentaAnual: number;
+        totalVentaAnual?: number; // Deprecated by totalVentaPeriodo
+        totalVentaPeriodo?: number;
     };
 }
 
-export async function fetchGraficosAvanzados(): Promise<GraficosAvanzadosResponse> {
-    const { data } = await api.get<GraficosAvanzadosResponse>("/ventas/graficos-avanzados");
+export async function fetchGraficosAvanzados(params?: { start?: string; end?: string }): Promise<GraficosAvanzadosResponse> {
+    const query = new URLSearchParams();
+    if (params?.start) query.append("start", params.start);
+    if (params?.end) query.append("end", params.end);
+
+    const { data } = await api.get<GraficosAvanzadosResponse>(`/ventas/graficos-avanzados?${query.toString()}`);
     return data;
 }
 
@@ -322,4 +344,36 @@ export interface LogisticaUpdate {
 
 export async function updateLogistica(id: number, data: LogisticaUpdate): Promise<void> {
     await api.patch(`/productos/${id}/logistica`, data);
+}
+
+// === API TENDENCIAS ===
+
+export interface TendenciaDataPoint {
+    monto: number;
+    cantidad: number;
+}
+
+export interface TendenciaRow {
+    label: string;
+    [familia: string]: TendenciaDataPoint | string;
+}
+
+export interface VentasTendenciasResponse {
+    tendencias: TendenciaRow[];
+    familias: string[];
+}
+
+export async function fetchVentasTendencias(params: number | DateRangeParams = 6): Promise<VentasTendenciasResponse> {
+    const query = new URLSearchParams();
+
+    if (typeof params === 'number') {
+        query.append("meses", params.toString());
+    } else {
+        if (params.meses) query.append("meses", params.meses.toString());
+        if (params.start) query.append("start", params.start);
+        if (params.end) query.append("end", params.end);
+    }
+
+    const { data } = await api.get<VentasTendenciasResponse>(`/ventas/tendencias?${query.toString()}`);
+    return data;
 }
