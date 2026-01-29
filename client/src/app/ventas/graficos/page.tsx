@@ -11,6 +11,7 @@ import { MarketShareChart } from "@/components/ventas/MarketShareChart";
 import { RankingFamiliasChart } from "@/components/ventas/RankingFamiliasChart";
 import { RendimientoAnualChart } from "@/components/ventas/RendimientoAnualChart";
 import { TendenciasChart } from "@/components/ventas/TendenciasChart";
+import { TendenciasTable } from "@/components/ventas/TendenciasTable";
 
 // Default helpers
 const getCurrentMonth = () => {
@@ -52,8 +53,6 @@ export default function GraficosVentasPage() {
     const computedAdvancedParams = useMemo(() => {
         if (periodMode === "custom") return apiParams;
 
-        // Si es preset, calculamos start/end basados en los meses seleccionados para forzar el filtrado
-        // Restamos (meses - 1) para obtener el rango inclusivo de X meses terminando en el actual
         if (periodMode === "preset") {
             return {
                 start: getPastMonth(meses - 1),
@@ -68,8 +67,6 @@ export default function GraficosVentasPage() {
         queryFn: () => fetchGraficosAvanzados(computedAdvancedParams),
     });
 
-    // Query Tendencias (Ahora afectado por fechas custom y preset calculadas)
-    // El backend ahora soporta rangos, así que pasamos computedAdvancedParams que siempre tienen fechas
     const { data: tendencias, isLoading: isLoadingTrends } = useQuery({
         queryKey: ["ventas-tendencias", computedAdvancedParams],
         queryFn: () => fetchVentasTendencias(computedAdvancedParams),
@@ -77,39 +74,194 @@ export default function GraficosVentasPage() {
 
     const isLoadingAll = isLoading || isLoadingAdv || isLoadingTrends;
 
-    // --- Lógica de Filtros por Familia ---
-    const allFamilies = useMemo(() => {
-        if (!advancedData?.marketShare) return [];
-        return advancedData.marketShare.map(m => m.name).sort();
-    }, [advancedData]);
+    // --- Lógica de Grupos de Familias ---
+    interface FamilyGroup {
+        id: string;
+        name: string;
+        families: string[];
+        color: string;
+    }
 
+    const [familyGroups, setFamilyGroups] = useState<FamilyGroup[]>([]);
+    const [groupsInitialized, setGroupsInitialized] = useState(false);
+
+    // Persistencia en LocalStorage
+    useEffect(() => {
+        const saved = localStorage.getItem("familyGroups");
+        if (saved) {
+            try {
+                setFamilyGroups(JSON.parse(saved));
+            } catch (e) {
+                console.error("Error parsing saved groups", e);
+            }
+        }
+        setGroupsInitialized(true);
+    }, []);
+
+    useEffect(() => {
+        if (groupsInitialized) {
+            localStorage.setItem("familyGroups", JSON.stringify(familyGroups));
+        }
+    }, [familyGroups, groupsInitialized]);
+
+    // Paleta extendida
+    const EXTENDED_PALETTE = [
+        '#4f46e5', '#06b6d4', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#6366f1', '#14b8a6',
+        '#ef4444', '#f97316', '#84cc16', '#22c55e', '#0ea5e9', '#3b82f6', '#a855f7', '#d946ef',
+        '#f43f5e', '#64748b', '#78716c', '#0f766e', '#b45309', '#be185d', '#4338ca', '#1d4ed8'
+    ];
+
+    const groupedData = useMemo(() => {
+        if (!advancedData?.marketShare || !advancedData?.ventasPorFamilia) return { marketShare: [], ranking: [], displayFamilies: [], rawFamilies: [], allEntities: [] };
+
+        const marketShareRaw = advancedData.marketShare;
+        const rankingRaw = advancedData.ventasPorFamilia;
+
+        // 1. Identificar familias que están en algun grupo
+        const groupedFamilyNames = new Set<string>();
+        familyGroups.forEach(g => g.families.forEach(f => groupedFamilyNames.add(f)));
+
+        // 2. Data "Suelt" (No agrupada)
+        const looseMarketShare = marketShareRaw.filter(m => !groupedFamilyNames.has(m.name));
+        const looseRanking = rankingRaw.filter(r => !groupedFamilyNames.has(r.familia));
+
+        // 3. Data Agrupada
+        const totalVenta = advancedData.meta?.totalVentaPeriodo || marketShareRaw.reduce((acc, curr) => acc + curr.value, 0) || 0;
+
+        const groupsMarketShare = familyGroups.map(g => {
+            const value = marketShareRaw
+                .filter(m => g.families.includes(m.name))
+                .reduce((acc, curr) => acc + curr.value, 0);
+
+            const pctVal = totalVenta > 0 ? (value / totalVenta) * 100 : 0;
+            const percentage = `${pctVal.toFixed(1)}%`;
+
+            return { name: g.name, value, percentage, isGroup: true, color: g.color, families: g.families };
+        }).filter(g => g.value > 0);
+
+        const groupsRanking = familyGroups.map(g => {
+            const groupItems = rankingRaw.filter(r => g.families.includes(r.familia));
+            const totalMonto = groupItems.reduce((acc, curr) => acc + curr.totalMonto, 0);
+            const totalCantidad = groupItems.reduce((acc, curr) => acc + curr.totalCantidad, 0);
+            return {
+                familia: g.name,
+                totalMonto,
+                totalCantidad,
+                isGroup: true,
+                color: g.color
+            };
+        }).filter(g => g.totalMonto > 0);
+
+        // 4. Combinar y Ordenar
+        const combinedMarketShare = [...looseMarketShare, ...groupsMarketShare].sort((a, b) => b.value - a.value);
+        const combinedRankingDesc = [...looseRanking, ...groupsRanking].sort((a, b) => b.totalMonto - a.totalMonto);
+
+        // Raw families for legacy support
+        const raw = marketShareRaw.map(m => m.name).sort();
+
+        return {
+            marketShare: combinedMarketShare,
+            ranking: combinedRankingDesc,
+            allEntities: combinedMarketShare.map(m => m.name),
+            rawFamilies: raw
+        };
+    }, [advancedData, familyGroups]);
+
+    // Filtrado visual
     const [selectedFamilies, setSelectedFamilies] = useState<string[]>([]);
     const hasInitializedFamilies = useRef(false);
 
-    // Inicializar con todas las familias solo la primera vez que cargan los datos
+    // Initial load selection
+    // Initial load selection and sync with new groups
     useEffect(() => {
-        // Solo inicializar si tenemos datos y no hemos inicializado aun
-        if (allFamilies.length > 0 && !hasInitializedFamilies.current) {
-            setSelectedFamilies(allFamilies);
-            hasInitializedFamilies.current = true;
-        }
-    }, [allFamilies]);
+        if (groupedData.allEntities.length > 0) {
+            if (!hasInitializedFamilies.current) {
+                setSelectedFamilies(groupedData.allEntities);
+                hasInitializedFamilies.current = true;
+            } else {
+                // If we already initialized, we should check if there are NEW groups that should be selected by default
+                // This happens when a user creates a group
+                setSelectedFamilies(prev => {
+                    const currentSet = new Set(prev);
+                    const newSelection = [...prev];
+                    let changed = false;
 
-    const toggleFamily = (family: string) => {
+                    groupedData.allEntities.forEach(entity => {
+                        // If it's a group (we can know because it's in our known groups list) and not currently selected...
+                        // actually simpler: if it's NOT in prev, and it IS a group name, add it.
+                        // We can identify groups by checking if the name exists in familyGroups
+                        const isGroup = familyGroups.some(g => g.name === entity);
+                        if (isGroup && !currentSet.has(entity)) {
+                            newSelection.push(entity);
+                            changed = true;
+                        }
+                    });
+
+                    return changed ? newSelection : prev;
+                });
+            }
+        }
+    }, [groupedData.allEntities, familyGroups]);
+
+    const toggleEntity = (entityName: string) => {
         setSelectedFamilies(prev =>
-            prev.includes(family)
-                ? prev.filter(f => f !== family)
-                : [...prev, family]
+            prev.includes(entityName)
+                ? prev.filter(f => f !== entityName)
+                : [...prev, entityName]
         );
     };
 
-    const selectAll = () => setSelectedFamilies(allFamilies);
-    const clearAll = () => setSelectedFamilies([]);
+    const selectAllEntities = () => setSelectedFamilies(groupedData.allEntities);
+    const clearAllEntities = () => setSelectedFamilies([]);
 
-    const filteredVentasPorFamilia = useMemo(() => {
-        if (!advancedData?.ventasPorFamilia) return [];
-        return advancedData.ventasPorFamilia.filter(f => selectedFamilies.includes(f.familia));
-    }, [advancedData?.ventasPorFamilia, selectedFamilies]);
+    // Aliases for compatibility
+    const allFamilies = groupedData.rawFamilies;
+    const toggleFamily = toggleEntity;
+    const selectAll = selectAllEntities;
+    const clearAll = clearAllEntities;
+
+    // Filtrar data final para graficos
+    const finalMarketShare = useMemo(() => {
+        return groupedData.marketShare.filter(item => selectedFamilies.includes(item.name));
+    }, [groupedData.marketShare, selectedFamilies]);
+
+    const finalRanking = useMemo(() => {
+        return groupedData.ranking.filter(item => selectedFamilies.includes(item.familia));
+    }, [groupedData.ranking, selectedFamilies]);
+
+    // State for Tendencias
+    const [tendenciasMetric, setTendenciasMetric] = useState<"money" | "quantity">("money");
+
+    const handleUpdateGroups = (newGroups: FamilyGroup[]) => {
+        // Detect deleted groups to restore their families to selection
+        const oldGroupIds = new Set(familyGroups.map(g => g.id));
+        const newGroupIds = new Set(newGroups.map(g => g.id));
+
+        // Find deleted groups
+        const deletedGroups = familyGroups.filter(g => !newGroupIds.has(g.id));
+
+        if (deletedGroups.length > 0) {
+            const familiesToRestore = deletedGroups.flatMap(g => g.families);
+
+            // Add released families to selection so they appear in charts
+            setSelectedFamilies(prev => {
+                const currentSet = new Set(prev);
+                const nextSelection = [...prev];
+                let changed = false;
+
+                familiesToRestore.forEach(fam => {
+                    if (!currentSet.has(fam)) {
+                        nextSelection.push(fam);
+                        changed = true;
+                    }
+                });
+
+                return changed ? nextSelection : prev;
+            });
+        }
+
+        setFamilyGroups(newGroups);
+    };
 
     return (
         <div className="flex h-screen bg-slate-100">
@@ -209,20 +361,27 @@ export default function GraficosVentasPage() {
                             {/* Seccion 2: Market Share & Top Familias */}
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 <MarketShareChart
-                                    data={advancedData?.marketShare}
+                                    data={finalMarketShare}
                                     meta={advancedData?.meta}
-                                    allFamilies={allFamilies}
-                                    selectedFamilies={selectedFamilies}
-                                    onToggleFamily={toggleFamily}
-                                    onSelectAll={selectAll}
-                                    onClearAll={clearAll}
+                                    allEntities={groupedData.allEntities}
+                                    selectedEntities={selectedFamilies}
+                                    onToggleEntity={toggleEntity}
+                                    onSelectAll={selectAllEntities}
+                                    onClearAll={clearAllEntities}
                                     loading={isLoadingAdv}
+                                    familyGroups={familyGroups}
+                                    rawFamilies={groupedData.rawFamilies}
+                                    onUpdateGroups={handleUpdateGroups}
+                                    colors={EXTENDED_PALETTE}
+                                    marketShareRaw={advancedData?.marketShare}
                                 />
 
                                 <RankingFamiliasChart
-                                    data={filteredVentasPorFamilia}
+                                    data={finalRanking}
                                     year={advancedData?.meta?.anoActual}
                                     loading={isLoadingAdv}
+                                    colors={EXTENDED_PALETTE}
+                                    allEntities={groupedData.allEntities} // Para saber indices de colores consistentes
                                 />
                             </div>
 
@@ -234,15 +393,26 @@ export default function GraficosVentasPage() {
                             />
 
                             {/* Seccion 4: Tendencias por Categoría */}
-                            <TendenciasChart
-                                data={tendencias}
-                                selectedFamilies={selectedFamilies}
-                                allFamilies={allFamilies}
-                                onToggleFamily={toggleFamily}
-                                onSelectAll={selectAll}
-                                onClearAll={clearAll}
-                                loading={isLoadingTrends}
-                            />
+                            <div className="space-y-6">
+                                <TendenciasChart
+                                    data={tendencias}
+                                    selectedFamilies={selectedFamilies}
+                                    allFamilies={allFamilies}
+                                    onToggleFamily={toggleFamily}
+                                    onSelectAll={selectAll}
+                                    onClearAll={clearAll}
+                                    loading={isLoadingTrends}
+                                    metric={tendenciasMetric}
+                                    onMetricChange={setTendenciasMetric}
+                                />
+
+                                <TendenciasTable
+                                    data={tendencias}
+                                    metric={tendenciasMetric}
+                                    selectedFamilies={selectedFamilies}
+                                    loading={isLoadingTrends}
+                                />
+                            </div>
                         </div>
                     )}
                 </main>
