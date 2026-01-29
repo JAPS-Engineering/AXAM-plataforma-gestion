@@ -41,7 +41,7 @@ export function RankingFamiliasChart({ data, year, loading, colors, allEntities 
                         <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                         <XAxis
                             type="number"
-                            tickFormatter={formatCLP}
+                            tickFormatter={(val: any) => formatCLP(Number(val || 0))}
                             tick={{ fontSize: 10, fill: '#94a3b8' }}
                             axisLine={false}
                             tickLine={false}

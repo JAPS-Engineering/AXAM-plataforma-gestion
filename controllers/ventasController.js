@@ -11,87 +11,9 @@ const { getMesActual } = require('../services/rotacionService');
 const { logError } = require('../utils/logger');
 const { subMonths, getYear, getMonth, format, differenceInMonths, parseISO, addMonths } = require('date-fns');
 
+const { parseDateParams } = require('../utils/dateUtils');
+
 const prisma = getPrismaClient();
-
-/**
- * Helper: Generar array de meses para un rango
- */
-function generateMonthsRangeArray(startYear, startMonth, endYear, endMonth) {
-    const months = [];
-    let current = new Date(startYear, startMonth - 1, 1);
-    const end = new Date(endYear, endMonth - 1, 1);
-
-    // Seguridad: Evitar bucles infinitos si las fechas estan mal
-    if (current > end) return [];
-
-    while (current <= end) {
-        months.push({
-            ano: getYear(current),
-            mes: getMonth(current) + 1,
-            label: format(current, 'MMM yyyy').toUpperCase()
-        });
-        current = addMonths(current, 1);
-    }
-    return months;
-}
-
-/**
- * Helper: Parsear rango de fechas desde query params
- * Soporta ?start=YYYY-MM&end=YYYY-MM O ?meses=X
- */
-function parseDateParams(query) {
-    const { meses, start, end } = query;
-    const mesActual = getMesActual();
-
-    // Caso 1: Rango Personalizado
-    if (start && end) {
-        const startDate = parseISO(`${start}-01`); // YYYY-MM-01
-        const endDate = parseISO(`${end}-01`);
-
-        const startYear = getYear(startDate);
-        const startMonth = getMonth(startDate) + 1;
-
-        const endYear = getYear(endDate);
-        const endMonth = getMonth(endDate) + 1;
-
-        const monthsCount = differenceInMonths(addMonths(endDate, 1), startDate);
-        const monthsArray = generateMonthsRangeArray(startYear, startMonth, endYear, endMonth);
-
-        return {
-            startYear, startMonth,
-            endYear, endMonth,
-            monthsCount: monthsCount > 0 ? monthsCount : 1, // Evitar div by zero
-            monthsArray,
-            isCustom: true
-        };
-    }
-
-    // Caso 2: Últimos X meses (Default)
-    const mesesNum = parseInt(meses || '3', 10);
-    // Usamos el "Mes Actual" del sistema (ultima carga) como pivote final
-    const today = new Date(mesActual.ano, mesActual.mes - 1, 1);
-
-    // Fecha Inicio = (Hoy - X meses + 1) para incluir el mes actual
-    // Ejemplo: Si estamos en Marzo (3) y pido 3 meses: Enero, Feb, Mar.
-    // subMonths(Mar 1, 3) -> Dic 1. (Dic, Ene, Feb, Mar = 4 meses).
-    // Queremos subMonths(Mar 1, 2) -> Ene 1.
-    const startDate = subMonths(today, mesesNum - 1);
-
-    const startYear = getYear(startDate);
-    const startMonth = getMonth(startDate) + 1;
-    const endYear = mesActual.ano;
-    const endMonth = mesActual.mes;
-
-    const monthsArray = generateMonthsRangeArray(startYear, startMonth, endYear, endMonth);
-
-    return {
-        startYear, startMonth,
-        endYear, endMonth,
-        monthsCount: mesesNum,
-        monthsArray,
-        isCustom: false
-    };
-}
 
 /**
  * GET /api/ventas/dashboard

@@ -14,7 +14,8 @@ const RUT_EMPRESA = process.env.RUT_EMPRESA;
 const ERP_BASE_URL = process.env.ERP_BASE_URL;
 
 // Tipos de documentos de venta (del código antiguo)
-const DOCUMENT_TYPES = ["FAVE", "BOVE", "NCVE"];
+// Tipos de documentos de venta
+const DOCUMENT_TYPES = ["FAVE", "BOVE", "NCVE", "GDVE"];
 
 /**
  * Obtener documentos de venta de un tipo específico para un rango de fechas
@@ -50,22 +51,53 @@ async function getDocumentsByType(docType, fechaInicio, fechaFin) {
             await new Promise(resolve => setTimeout(resolve, (retryAfter + 1) * 1000));
             return getDocumentsByType(docType, fechaInicio, fechaFin); // Reintentar
         }
+        // Algunos tipos pueden no existir o no tener docs, no es necesariamente error fatal
+        if (error.response?.status === 400 || error.response?.status === 404) {
+            logWarning(`No se encontraron documentos ${docType} o endpoint no válido.`);
+            return [];
+        }
         logError(`Error al obtener ${docType}: ${error.message}`);
         throw error;
     }
 }
 
 /**
- * Obtener TODAS las ventas de FAVE, BOVE y NCVE para un rango de fechas
- * Combina todos los tipos de documentos en una sola respuesta
+ * Verifica si un documento FAVE hace referencia a una Guía de Despacho (GDVE)
+ * Para evitar duplicidad de ventas.
+ */
+function isFaveRefToGuide(doc) {
+    // 1. Revisar campo referencias estructurado
+    if (doc.referencias && Array.isArray(doc.referencias)) {
+        const hasGuideRef = doc.referencias.some(ref =>
+            ref.tipo_doc && (ref.tipo_doc.includes('GD') || ref.tipo_doc.includes('GUIA'))
+        );
+        if (hasGuideRef) return true;
+    }
+
+    // 2. Revisar Glosa (fallback común)
+    if (doc.glosa) {
+        const glosa = doc.glosa.toUpperCase();
+        // Patrones comunes: "SEGÚN GUÍA", "REF GD", "GDVE", "GUIA DE DESPACHO"
+        if (glosa.includes('GUIA') || glosa.includes('GD') || glosa.includes('DESPACHO')) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Obtener TODAS las ventas de FAVE, BOVE, NCVE y GDVE para un rango de fechas
+ * Deduplica FAVEs que vienen de Guías.
  */
 async function getAllSales(fechaInicio, fechaFin) {
     logInfo(`Obteniendo ventas de ${DOCUMENT_TYPES.join(', ')} del ${format(fechaInicio, 'dd/MM/yyyy')} al ${format(fechaFin, 'dd/MM/yyyy')}...`);
 
     const allDocuments = [];
+    const stats = {};
 
     // Obtener documentos de cada tipo en paralelo
-    const promises = DOCUMENT_TYPES.map(async (docType) => {
+    const results = await Promise.all(DOCUMENT_TYPES.map(async (docType) => {
         try {
             const docs = await getDocumentsByType(docType, fechaInicio, fechaFin);
             logSuccess(`  ${docType}: ${docs.length} documentos`);
@@ -74,26 +106,39 @@ async function getAllSales(fechaInicio, fechaFin) {
             logError(`  ${docType}: Error - ${error.message}`);
             return { type: docType, documents: [], error: error.message };
         }
-    });
+    }));
 
-    const results = await Promise.all(promises);
+    let favesSkipped = 0;
 
     for (const result of results) {
-        // Agregar tipo de documento a cada documento para referencia
+        stats[result.type] = result.documents.length;
+
         for (const doc of result.documents) {
+            // Lógica de Deduplicación FAVE vs GDVE
+            if (result.type === 'FAVE') {
+                if (isFaveRefToGuide(doc)) {
+                    favesSkipped++;
+                    continue; // Saltar esta factura, ya contamos la GDVE
+                }
+            }
+
             doc._docType = result.type;
             allDocuments.push(doc);
         }
     }
 
-    logSuccess(`Total: ${allDocuments.length} documentos de venta`);
+    logSuccess(`Resumen Deduplicación:`);
+    logSuccess(`  Total FAVEs procesadas: ${stats['FAVE'] || 0}`);
+    logSuccess(`  FAVEs omitidas (Ref a GDVE): ${favesSkipped}`);
+    logSuccess(`  Total GDVEs incluidas: ${stats['GDVE'] || 0}`);
+    logSuccess(`  Total final documentos: ${allDocuments.length}`);
 
     return allDocuments;
 }
 
 /**
  * Extraer productos de un documento de venta
- * Retorna array de { sku, cantidad, montoNeto }
+ * Retorna array de { sku, cantidad, montoNeto, vendedor }
  */
 function extractProductsFromDocument(document) {
     const products = [];
@@ -105,11 +150,21 @@ function extractProductsFromDocument(document) {
         return products;
     }
 
+    // Extracción de Vendedor
+    // Prioridad: usuario_vendedor (initials) > cod_vendedor > vendedor (nombre/id)
+    let vendedor = 'Sin Vendedor';
+    if (document.usuario_vendedor) {
+        vendedor = document.usuario_vendedor.toString().trim().toLowerCase(); // "ms", "hm"
+    } else if (document.cod_vendedor) {
+        vendedor = document.cod_vendedor.toString().trim();
+    } else if (document.vendedor || document.nom_vendedor) {
+        vendedor = (document.vendedor || document.nom_vendedor).toString().trim();
+    }
+
     for (const item of details) {
-        // Mapeo de campos basado en la respuesta real de la API (debugReference.js)
+        // Mapeo de campos basado en la respuesta real de la API
         const sku = item.codigo || item.cod_prod || item.codigo_prod || item.cod_art || item.sku;
         const cantidad = parseFloat(item.cantidad || item.cant || 0);
-        const vendedor = (document.vendedor || document.nom_vendedor || document.vendedor_nombre || 'Sin Vendedor').toString().trim();
 
         let montoNeto = parseFloat(item.monto_neto || item.neto || item.precio_neto || 0);
 
@@ -153,8 +208,16 @@ function aggregateSalesByProduct(documents) {
             }
 
             const existing = salesByProduct.get(key);
-            existing.cantidad += product.cantidad;
-            existing.montoNeto += product.montoNeto;
+
+            // Si es Nota de Crédito, RESTAR
+            if (doc._docType === 'NCVE') {
+                existing.cantidad -= product.cantidad;
+                existing.montoNeto -= product.montoNeto;
+            } else {
+                // FAVE, BOVE, GDVE -> SUMAR
+                existing.cantidad += product.cantidad;
+                existing.montoNeto += product.montoNeto;
+            }
         }
     }
 
