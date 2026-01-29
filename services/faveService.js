@@ -13,25 +13,28 @@ const ERP_BASE_URL = process.env.ERP_BASE_URL;
 /**
  * Obtener Documentos (FAVE, GDVE, etc) de un rango de fechas
  */
-async function getDocuments(docType = 'FAVE', fechaInicio, fechaFin, maxRetries = 3) {
+async function getDocuments(docType = 'FAVE', fechaInicio, fechaFin, maxRetries = 3, includeDetails = false) {
     const headers = await getAuthHeaders();
 
     const fechaInicioStr = format(fechaInicio, 'yyyyMMdd');
     const fechaFinStr = format(fechaFin, 'yyyyMMdd');
 
     // Determinar si es Venta (V) o Compra (C)
-    // FACE, GDCE, NCCE son compras
     const isCompra = ['FACE', 'GDCE', 'NCCE', 'NDCE'].includes(docType);
     const tipoEndpoint = isCompra ? 'C' : 'V';
 
     // Endpoint genérico para documentos: /documents/{rut}/{TIPO}/{V|C}/
-    const url = `${ERP_BASE_URL}/documents/${RUT_EMPRESA}/${docType}/${tipoEndpoint}/?df=${fechaInicioStr}&dt=${fechaFinStr}`;
+    let url = `${ERP_BASE_URL}/documents/${RUT_EMPRESA}/${docType}/${tipoEndpoint}/?df=${fechaInicioStr}&dt=${fechaFinStr}`;
 
-    logInfo(`Obteniendo ${docType} del ${format(fechaInicio, 'dd/MM/yyyy')} al ${format(fechaFin, 'dd/MM/yyyy')}...`);
+    if (includeDetails) {
+        url += '&details=1';
+    }
+
+    logInfo(`Obteniendo ${docType} del ${format(fechaInicio, 'dd/MM/yyyy')} al ${format(fechaFin, 'dd/MM/yyyy')}${includeDetails ? ' (con detalles)' : ''}...`);
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
-            const response = await axios.get(url, { headers });
+            const response = await axios.get(url, { headers, timeout: includeDetails ? 120000 : 60000 });
             const docs = response.data.data || response.data || [];
 
             if (!Array.isArray(docs)) {
@@ -40,7 +43,7 @@ async function getDocuments(docType = 'FAVE', fechaInicio, fechaFin, maxRetries 
             return docs;
 
         } catch (error) {
-            // Si es error 429 (Too Many Requests)
+            // ... (rest of error handling remains same, just ensuring timeout is handled)
             if (error.response && error.response.status === 429) {
                 const retryAfter = (error.response && error.response.data && error.response.data.retry) || 10;
                 logInfo(`  ⏳ Rate limit detectado. Esperando ${retryAfter}s...`);
@@ -62,7 +65,7 @@ async function getDocuments(docType = 'FAVE', fechaInicio, fechaFin, maxRetries 
     }
 }
 
-// Wrapper para retro-compatibilidad (aunque deberíamos migrar)
+// Wrapper para retro-compatibilidad
 async function getFAVEs(fechaInicio, fechaFin, maxRetries = 3) {
     return getDocuments('FAVE', fechaInicio, fechaFin, maxRetries);
 }
@@ -70,7 +73,7 @@ async function getFAVEs(fechaInicio, fechaFin, maxRetries = 3) {
 /**
  * Obtener todos los documentos dividiendo en períodos
  */
-async function getAllDocuments(docType = 'FAVE', fechaInicio, fechaFin) {
+async function getAllDocuments(docType = 'FAVE', fechaInicio, fechaFin, includeDetails = false) {
     const todosLosDocs = [];
     let fechaActual = new Date(fechaInicio);
 
@@ -82,7 +85,7 @@ async function getAllDocuments(docType = 'FAVE', fechaInicio, fechaFin) {
             fechaFinPeriodo = new Date(fechaFin);
         }
 
-        const docsPeriodo = await getDocuments(docType, fechaActual, fechaFinPeriodo);
+        const docsPeriodo = await getDocuments(docType, fechaActual, fechaFinPeriodo, 3, includeDetails);
         todosLosDocs.push(...docsPeriodo);
 
         logSuccess(`    Encontrados ${docsPeriodo.length} ${docType} en periodo ${format(fechaActual, 'dd/MM/yyyy')} - ${format(fechaFinPeriodo, 'dd/MM/yyyy')}`);

@@ -289,11 +289,12 @@ async function main() {
             mes: getMonth(fechaHoy) + 1 // getMonth devuelve 0-11, necesitamos 1-12
         };
 
-        logInfo(`Obteniendo FAVEs del mes actual (${mesActual.mes}/${mesActual.ano})...`);
+        logInfo(`Obteniendo FAVEs del mes actual (${mesActual.mes}/${mesActual.ano}) con detalles...`);
         logInfo(`Rango: ${format(fechaInicio, 'dd/MM/yyyy')} al ${format(fechaFin, 'dd/MM/yyyy')}`);
 
-        // Obtener FAVEs del mes actual
-        const faves = await getFAVEs(fechaInicio, fechaFin);
+        // Obtener FAVEs del mes actual CON DETALLES (Optimización Clave)
+        const { getDocuments } = require('../services/faveService');
+        const faves = await getDocuments('FAVE', fechaInicio, fechaFin, 3, true);
 
         logSuccess(`Total de FAVEs encontradas: ${faves.length}\n`);
 
@@ -302,41 +303,40 @@ async function main() {
             return;
         }
 
-        // Resetear el flag de primer error
-        primerErrorMostrado = false;
-
-        logInfo(`Procesando ${faves.length} FAVEs con concurrencia de 20...`);
-
-        // Procesar FAVEs con concurrencia de 20
-        const resultados = await processFAVEsSequentially(faves, 20);
-
-        console.log('\n');
+        logInfo(`Procesando ${faves.length} FAVEs...`);
 
         let procesadas = 0;
         let productosProcesados = 0;
         let errores = 0;
         const ventasPorProducto = {}; // SKU -> { cantidad, montoNeto }
 
-        // Agregar productos a ventasPorProducto
-        for (const resultado of resultados) {
-            const vendedor = resultado.vendedor || 'Sin Vendedor';
-            if (resultado.success && resultado.productos.length > 0) {
-                for (const producto of resultado.productos) {
-                    const key = `${producto.sku}|${vendedor}`;
-                    if (!ventasPorProducto[key]) {
-                        ventasPorProducto[key] = {
-                            cantidad: 0,
-                            montoNeto: 0
-                        };
+        for (const fave of faves) {
+            try {
+                // Normalizar detalles
+                if (!fave.detalles && fave.detalle) fave.detalles = fave.detalle;
+
+                const productos = extractProductosFromFAVE(fave);
+                const vendedor = (fave.vendedor || fave.nom_vendedor || fave.vendedor_nombre || 'Sin Vendedor').toString().trim();
+
+                if (productos.length > 0) {
+                    for (const producto of productos) {
+                        const key = `${producto.sku}|${vendedor}`;
+                        if (!ventasPorProducto[key]) {
+                            ventasPorProducto[key] = {
+                                cantidad: 0,
+                                montoNeto: 0
+                            };
+                        }
+                        ventasPorProducto[key].cantidad += producto.cantidad;
+                        ventasPorProducto[key].montoNeto += producto.montoNeto;
+                        productosProcesados++;
                     }
-                    ventasPorProducto[key].cantidad += producto.cantidad;
-                    ventasPorProducto[key].montoNeto += producto.montoNeto;
-                    productosProcesados++;
                 }
                 procesadas++;
-            } else {
+                if (procesadas % 100 === 0) logInfo(`    ... ${procesadas} FAVEs procesadas`);
+
+            } catch (err) {
                 errores++;
-                procesadas++;
             }
         }
 

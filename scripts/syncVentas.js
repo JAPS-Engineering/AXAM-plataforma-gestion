@@ -72,34 +72,18 @@ async function processDocumentBatch(docs, tipoDoc) {
 
     for (const doc of docs) {
         try {
-            let productosExtraidos = [];
+            // Con details=1, los productos vienen en doc.detalles o doc.detalle (depende del ERP)
+            // Normalizar detalles para extractProductosFromFAVE
+            if (!doc.detalles && doc.detalle) doc.detalles = doc.detalle;
 
-            // Validación rápida de exclusión para FAVE antes de pedir detalles (ahorra API calls)
+            // Validación rápida de exclusión para FAVE antes de procesar productos
             if (tipoDoc === 'FAVE' && shouldExcludeFAVE(doc)) {
                 excluidos++;
-                // logInfo(`  🚫 FAVE ${doc.folio} excluida por referenciar Guía.`);
                 continue;
             }
 
-            // Si ya tiene detalles (optimización futura) usarlos, si no, fetch
-            let docDetails = doc;
-            if (!doc.detalles) {
-                docDetails = await getDocumentDetails(tipoDoc, doc);
-            }
-
-            if (!docDetails) {
-                errores++;
-                continue;
-            }
-
-            // Doble chequeo de exclusión por si la glosa venía solo en el detalle completo
-            if (tipoDoc === 'FAVE' && shouldExcludeFAVE(docDetails)) {
-                excluidos++;
-                continue;
-            }
-
-            productosExtraidos = extractProductosFromFAVE(docDetails);
-            const vendedor = (docDetails.vendedor || docDetails.nom_vendedor || docDetails.vendedor_nombre || 'Sin Vendedor').toString().trim();
+            const productosExtraidos = extractProductosFromFAVE(doc);
+            const vendedor = (doc.vendedor || doc.nom_vendedor || doc.vendedor_nombre || 'Sin Vendedor').toString().trim();
 
             if (productosExtraidos.length > 0) {
                 conVentas++;
@@ -114,14 +98,13 @@ async function processDocumentBatch(docs, tipoDoc) {
             }
 
             procesados++;
-            if (procesados % 50 === 0) process.stdout.write('.');
+            // Loguear progreso cada 100 docs
+            if (procesados % 100 === 0) logInfo(`    ... ${procesados} documentos procesados`);
 
         } catch (e) {
             errores++;
-            // logError(`Error procesando ${tipoDoc} ${doc.folio}: ${e.message}`);
         }
     }
-    console.log(''); // Salto de linea tras puntos
     return { ventasPorProducto, stats: { procesados, excluidos, conVentas, errores } };
 }
 
@@ -137,16 +120,10 @@ async function syncMonth(db, dateDate) {
 
     logSection(`📅 PROCESANDO MES ${month}/${year}`);
 
-    // 1. Obtener documentos
-    // Usamos details=1 en el loop o pedimos getAllDocuments que acepte params extra?
-    // faveService.js getAllDocuments llama getDocuments que llama a la URL.
-    // Por simplicidad, traeremos la lista y luego iteraremos con getDocumentDetails.
-    // Esto es más lento pero seguro dado el rate limit.
-
-    // FAVE
-    const faves = await getAllDocuments('FAVE', start, end) || [];
-    // GDVE
-    const gdves = await getAllDocuments('GDVE', start, end) || [];
+    // 1. Obtener documentos CON DETALLES (Optimización Clave)
+    const includeDetails = true;
+    const faves = await getAllDocuments('FAVE', start, end, includeDetails) || [];
+    const gdves = await getAllDocuments('GDVE', start, end, includeDetails) || [];
 
     logInfo(`  📄 Documentos encontrados: ${faves.length} FAVEs, ${gdves.length} GDVEs`);
 

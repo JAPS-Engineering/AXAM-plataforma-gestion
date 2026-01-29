@@ -32,8 +32,8 @@ function saveVentaMensual(db, productoId, ano, mes, cantidad, montoNeto, vendedo
         // Si no se actualizó nada, insertar
         if (result.changes === 0) {
             const insert = db.prepare(`
-                INSERT INTO ventas_mensuales (producto_id, ano, mes, vendedor, cantidad_vendida, monto_neto)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO ventas_mensuales (producto_id, ano, mes, vendedor, cantidad_vendida, monto_neto, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             `);
             insert.run(productoId, ano, mes, vendedor || '', cantidad, montoNeto);
         }
