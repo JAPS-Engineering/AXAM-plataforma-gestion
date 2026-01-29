@@ -328,10 +328,16 @@ export default function GraficosVentasPage() {
                                             <BarChart
                                                 layout="vertical"
                                                 data={filteredVentasPorFamilia.slice(0, 15) || []}
-                                                margin={{ top: 5, right: 30, left: 60, bottom: 5 }}
+                                                margin={{ top: 5, right: 30, left: 60, bottom: 20 }}
                                             >
                                                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-                                                <XAxis type="number" hide />
+                                                <XAxis
+                                                    type="number"
+                                                    tickFormatter={formatCLP}
+                                                    tick={{ fontSize: 10, fill: '#94a3b8' }}
+                                                    axisLine={false}
+                                                    tickLine={false}
+                                                />
                                                 <YAxis
                                                     type="category"
                                                     dataKey="familia"
@@ -360,9 +366,6 @@ export default function GraficosVentasPage() {
                                                 <Bar dataKey="totalMonto" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={24} background={{ fill: '#f8fafc' }} />
                                             </BarChart>
                                         </ResponsiveContainer>
-                                    </div>
-                                    <div className="mt-2 text-right">
-                                        <Link href="/ventas/analisis" className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">Ver ranking detallado &rarr;</Link>
                                     </div>
                                 </div>
                             </div>

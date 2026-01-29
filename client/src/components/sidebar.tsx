@@ -20,6 +20,7 @@ export function Sidebar({ className }: SidebarProps) {
         { href: "/minimos", label: "Stock Mínimo", icon: AlertTriangle },
         { href: "/ventas", label: "Análisis Ventas", icon: TrendingUp },
         { href: "/ventas/graficos", label: "Gráficos", icon: BarChart3 },
+        { href: "/ventas/analisis", label: "Ranking Ventas SKU", icon: TrendingUp },
         { href: "/historial", label: "Historial de Sync", icon: History },
         { href: "/logistica", label: "Configuración Logística", icon: Package2 },
     ];
