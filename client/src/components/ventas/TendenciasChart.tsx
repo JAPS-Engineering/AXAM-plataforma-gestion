@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { TrendingUp, Filter, X, List } from "lucide-react";
+import { TrendingUp, Filter, X, List, Search as SearchIcon } from "lucide-react";
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar } from "recharts";
 import { formatCLP, formatTooltipCLP } from "@/lib/utils";
 import { VentasTendenciasResponse, TendenciaDataPoint } from "@/lib/api";
@@ -9,7 +9,9 @@ const PIE_COLORS = ['#4f46e5', '#06b6d4', '#8b5cf6', '#ec4899', '#f59e0b', '#10b
 interface TendenciasChartProps {
     data: VentasTendenciasResponse | undefined;
     selectedFamilies: string[];
-    allFamilies: string[];
+    allEntities: string[]; // This replaces allFamilies for the filter list
+    rawFamilies: string[]; // For stable colors
+    familyGroups: { name: string; families: string[]; color: string }[];
     onToggleFamily: (family: string) => void;
     onSelectAll: () => void;
     onClearAll: () => void;
@@ -18,10 +20,13 @@ interface TendenciasChartProps {
     onMetricChange: (metric: "money" | "quantity") => void;
 }
 
+
 export function TendenciasChart({
     data,
     selectedFamilies,
-    allFamilies,
+    allEntities,
+    rawFamilies,
+    familyGroups,
     onToggleFamily,
     onSelectAll,
     onClearAll,
@@ -29,10 +34,11 @@ export function TendenciasChart({
     metric,
     onMetricChange
 }: TendenciasChartProps) {
-    // const [metric, setMetric] = useState<"money" | "quantity">("money"); // Removed local state
     const [showFilterDropdown, setShowFilterDropdown] = useState(false);
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [selectedMonthLabel, setSelectedMonthLabel] = useState<string>("");
+    const [searchTerm, setSearchTerm] = useState("");
+
 
     // Inicializar mes seleccionado cuando cambia la data o se abre el modal
     useEffect(() => {
@@ -50,17 +56,62 @@ export function TendenciasChart({
         );
     }
 
+    // Calcule effective raw families based on groups
+    const effectiveSelectedRawFamilies = (() => {
+        const rawSet = new Set<string>();
+
+        selectedFamilies.forEach(selected => {
+            const group = familyGroups?.find(g => g.name === selected);
+            if (group) {
+                group.families.forEach(f => rawSet.add(f));
+            } else {
+                // It's a raw family (loose)
+                rawSet.add(selected);
+            }
+        });
+
+        return Array.from(rawSet);
+    })();
+
+    // Calculate sorted families for the stack (Smallest to Largest -> Top is Largest in Recharts default? No)
+    // Recharts draws first bar at bottom. 
+    // User wants "arriba queden de mayor a menor" (Largest at top).
+    // So Bottom must be Smallest? No, Bottom is the first drawn.
+    // If we draw Smallest first (Bottom), then Largest will be Last (Top).
+    // So we need to sort Ascending by value.
+    const sortedEffectiveFamilies = (() => {
+        if (!data?.tendencias) return [];
+
+        // Calculate total weight for each family across the dataset (or specifically last month, or max... use sum)
+        const familyWeights = new Map<string, number>();
+        effectiveSelectedRawFamilies.forEach(fam => {
+            const total = data.tendencias.reduce((acc, curr) => {
+                const dp = curr[fam] as TendenciaDataPoint | undefined;
+                return acc + (dp?.[metric === "money" ? "monto" : "cantidad"] || 0);
+            }, 0);
+            familyWeights.set(fam, total);
+        });
+
+        // Filter only those that exist in data.familias (safety) and Sort Ascending
+        return (data.familias || [])
+            .filter(f => effectiveSelectedRawFamilies.includes(f))
+            .sort((a, b) => (familyWeights.get(a) || 0) - (familyWeights.get(b) || 0));
+    })();
+
     const currentMonthData = data?.tendencias.find(t => t.label === selectedMonthLabel);
 
     // Preparar payload para el modal (similar al formato del tooltip)
-    const modalPayload = currentMonthData ? allFamilies.map((familia, idx) => {
+    const modalPayload = currentMonthData ? sortedEffectiveFamilies.map((familia) => {
+        const idx = rawFamilies.indexOf(familia);
+        const stableIdx = idx >= 0 ? idx : 0;
         const dataPoint = currentMonthData[familia] as TendenciaDataPoint | undefined;
         return {
             name: familia,
             value: dataPoint?.[metric === "money" ? "monto" : "cantidad"] || 0,
-            color: PIE_COLORS[idx % PIE_COLORS.length] // Stable colors
+            color: PIE_COLORS[stableIdx % PIE_COLORS.length] // Stable colors
         };
     }).filter(item => item.value > 0).sort((a, b) => b.value - a.value) : [];
+
 
     return (
         <>
@@ -106,8 +157,9 @@ export function TendenciasChart({
 
                             {/* Filtro Familias */}
                             <div className="relative">
-                                {selectedFamilies.length !== allFamilies.length && (
+                                {selectedFamilies.length !== allEntities.length && (
                                     <span className="absolute -top-2 -right-2 flex h-3 w-3">
+
                                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
                                         <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
                                     </span>
@@ -151,10 +203,34 @@ export function TendenciasChart({
                                                 </button>
                                             </div>
 
+                                            <div className="px-2 mb-2">
+                                                <div className="relative">
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Buscar..."
+                                                        value={searchTerm}
+                                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                                        className="w-full pl-7 pr-2 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:border-indigo-400"
+                                                    />
+                                                    <SearchIcon className="absolute left-2 top-1.5 h-3.5 w-3.5 text-slate-400" />
+                                                </div>
+                                            </div>
+
                                             <div className="space-y-1 max-h-[300px] overflow-y-auto scrollbar-thin pr-2">
-                                                {allFamilies.map((family, idx) => {
-                                                    const isSelected = selectedFamilies.includes(family);
-                                                    const color = PIE_COLORS[idx % PIE_COLORS.length];
+                                                {allEntities.filter(e => e.toLowerCase().includes(searchTerm.toLowerCase())).map((entity, idx) => {
+                                                    const isSelected = selectedFamilies.includes(entity);
+                                                    const isGroup = familyGroups.some(g => g.name === entity);
+
+                                                    // Find color: if group, use group color. If raw, use raw color from rawFamilies index
+                                                    let color = "#cbd5e1";
+                                                    if (isGroup) {
+                                                        const group = familyGroups.find(g => g.name === entity);
+                                                        if (group) color = group.color;
+                                                    } else {
+                                                        const rawIdx = rawFamilies.indexOf(entity);
+                                                        if (rawIdx >= 0) color = PIE_COLORS[rawIdx % PIE_COLORS.length];
+                                                    }
+
                                                     return (
                                                         <label
                                                             key={idx}
@@ -163,12 +239,12 @@ export function TendenciasChart({
                                                             <input
                                                                 type="checkbox"
                                                                 checked={isSelected}
-                                                                onChange={() => onToggleFamily(family)}
+                                                                onChange={() => onToggleFamily(entity)}
                                                                 className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                                                             />
                                                             <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }}></div>
-                                                            <span className={`text-xs ${isSelected ? 'text-slate-900 font-medium' : 'text-slate-500'}`}>
-                                                                {family || 'Sin Familia'}
+                                                            <span className={`text-xs ${isSelected ? 'text-slate-900 font-medium' : 'text-slate-500'} ${isGroup ? 'font-bold' : ''}`}>
+                                                                {entity}
                                                             </span>
                                                         </label>
                                                     );
@@ -253,19 +329,22 @@ export function TendenciasChart({
                             <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
 
                             {/* Generar Barras Dinámicamente baseadas en familias */}
-                            {(data?.familias || [])
-                                .filter(f => selectedFamilies.includes(f)) // Aplica el filtro global de familias
-                                .map((familia, index) => (
+                            {sortedEffectiveFamilies.map((familia) => {
+                                const idx = rawFamilies.indexOf(familia);
+                                // Fallback just in case
+                                const stableIdx = idx >= 0 ? idx : 999;
+                                return (
                                     <Bar
                                         key={familia}
                                         dataKey={`${familia}.${metric === "money" ? "monto" : "cantidad"}`}
                                         name={familia}
                                         stackId="a"
-                                        fill={PIE_COLORS[allFamilies.indexOf(familia) % PIE_COLORS.length]} // Stable colors
+                                        fill={PIE_COLORS[stableIdx % PIE_COLORS.length]} // Stable colors
                                         radius={[0, 0, 0, 0]}
                                         maxBarSize={50}
                                     />
-                                ))}
+                                );
+                            })}
                         </BarChart>
                     </ResponsiveContainer>
                 </div>

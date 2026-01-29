@@ -14,9 +14,14 @@ import {
     BarChart3,
     ArrowUp,
     ArrowDown,
-    Minus
+    Minus,
+    ChevronUp,
+    ChevronDown,
+    ChevronsUpDown
 } from "lucide-react";
 import { FiltersBar } from "@/components/filters-bar";
+import { ClassificationBadge, TrendBadge, CoverageBadge } from "@/components/ranking-badges";
+import { cn } from "@/lib/utils";
 
 // Formateador de moneda CLP
 const formatCLP = (amount: number) => {
@@ -28,22 +33,53 @@ const formatCLP = (amount: number) => {
     }).format(amount);
 };
 
+const getCurrentMonth = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+const getPastMonth = (monthsAgo: number) => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - monthsAgo);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+
 export default function AnalisisVentasPage() {
     // Filtros state
+    // Filtros state
     const [marca, setMarca] = useState("");
+
+    // State del Periodo
+    const [periodMode, setPeriodMode] = useState<"preset" | "custom">("preset");
     const [meses, setMeses] = useState(6);
+    const [customRange, setCustomRange] = useState({
+        start: getPastMonth(6),
+        end: getCurrentMonth()
+    });
+
     const [busqueda, setBusqueda] = useState("");
-    const [ocultarCero, setOcultarCero] = useState(true);
-    const [salesStatus, setSalesStatus] = useState<'all' | 'with_sales' | 'without_sales'>('all');
+
+    const [salesStatus, setSalesStatus] = useState<'all' | 'with_sales' | 'without_sales'>('with_sales');
+
+    // Sorting state
+    const [sortConfig, setSortConfig] = useState<{ key: string; direction: "asc" | "desc" } | null>({ key: "total", direction: "desc" });
 
     // Pagination state
     const [currentPage, setCurrentPage] = useState(1);
-    const [pageSize, setPageSize] = useState(50);
+    const [pageSize, setPageSize] = useState(10);
 
     // Data fetching
+    // Params computados para la API
+    const apiParams = useMemo(() => {
+        if (periodMode === "preset") {
+            return { meses };
+        } else {
+            return { start: customRange.start, end: customRange.end };
+        }
+    }, [periodMode, meses, customRange]);
+
     const { data, isLoading, error } = useQuery({
-        queryKey: ["ventas-analytics", meses, marca],
-        queryFn: () => fetchVentasDashboard(meses, marca || undefined),
+        queryKey: ["ventas-analytics", apiParams, marca],
+        queryFn: () => fetchVentasDashboard(apiParams, marca || undefined),
     });
 
     // Filtrado local y Ranking
@@ -64,29 +100,129 @@ export default function AnalisisVentasPage() {
         }
 
         // Unified sales filter logic
-        if (salesStatus === 'with_sales' || ocultarCero) {
+        if (salesStatus === 'with_sales') {
             result = result.filter((p) => (p.totalMonto || 0) > 0);
         } else if (salesStatus === 'without_sales') {
             result = result.filter((p) => (p.totalMonto || 0) === 0);
         }
 
-        // Ordenar por Monto Total Descendente (Ranking)
-        result.sort((a, b) => b.totalMonto - a.totalMonto);
-
-        // Calcular % del total
+        // Calcular métricas adicionales (ABC, Tendencia, Cobertura)
         const grandTotal = result.reduce((sum, item) => sum + item.totalMonto, 0);
 
-        const enrichedResult = result.map((item, index) => ({
+        // 1. Sort by Total Descending for ABC calculation (must be done on the full result set first)
+        // actually we should do this on the filtered result before final sort.
+        // Let's create a temporary array for ABC calculation
+        const abcSorted = [...result].sort((a, b) => b.totalMonto - a.totalMonto);
+        let accumulated = 0;
+        const abcMap = new Map<number, "A" | "B" | "C">();
+
+        abcSorted.forEach((item) => {
+            accumulated += item.totalMonto;
+            const percentage = grandTotal > 0 ? (accumulated / grandTotal) * 100 : 0;
+            if (percentage <= 80) abcMap.set(item.producto.id, "A");
+            else if (percentage <= 95) abcMap.set(item.producto.id, "B");
+            else abcMap.set(item.producto.id, "C");
+        });
+
+        // 2. Enhance items with new metrics
+        let enrichedResult = result.map((item, index) => {
+            // Trend: Last Month vs Average
+            // Assuming ventasMeses is ordered chronologically (oldest -> newest), last element is most recent
+            const lastMonthSale = item.ventasMeses[item.ventasMeses.length - 1]?.montoNeto || 0;
+            const avgSale = item.promedioMonto || 0;
+            const trend = avgSale > 0 ? ((lastMonthSale - avgSale) / avgSale) * 100 : 0;
+
+            // Coverage: Stock / Average Units
+            // Calculate Average Units
+            const totalUnits = item.ventasMeses.reduce((sum, m) => sum + (m.cantidad || 0), 0);
+            const avgUnits = meses > 0 ? totalUnits / meses : 0;
+            const currentStock = item.mesActual?.stockActual || 0;
+            const coverage = avgUnits > 0 ? currentStock / avgUnits : 0;
+
+            return {
+                ...item,
+                share: grandTotal > 0 ? (item.totalMonto / grandTotal) * 100 : 0,
+                abcClass: abcMap.get(item.producto.id) || "C",
+                trend,
+                coverage
+            };
+        });
+
+        // 3. Apply Sorting
+        if (sortConfig) {
+            enrichedResult.sort((a, b) => {
+                let aValue: any;
+                let bValue: any;
+
+                switch (sortConfig.key) {
+                    case "familia":
+                        aValue = (a.producto.familia || "").toLowerCase();
+                        bValue = (b.producto.familia || "").toLowerCase();
+                        break;
+                    case "sku":
+                        aValue = a.producto.sku.toLowerCase();
+                        bValue = b.producto.sku.toLowerCase();
+                        break;
+                    case "descripcion":
+                        aValue = a.producto.descripcion.toLowerCase();
+                        bValue = b.producto.descripcion.toLowerCase();
+                        break;
+                    case "total":
+                        aValue = a.totalMonto;
+                        bValue = b.totalMonto;
+                        break;
+                    case "promedio":
+                        aValue = a.promedioMonto;
+                        bValue = b.promedioMonto;
+                        break;
+                    case "abc":
+                        // A < B < C for string compare, but we want A to be "highest" rank usually?
+                        // If Asc: A -> B -> C. If Desc: C -> B -> A.
+                        aValue = a.abcClass;
+                        bValue = b.abcClass;
+                        break;
+                    case "trend":
+                        aValue = a.trend;
+                        bValue = b.trend;
+                        break;
+                    case "coverage":
+                        aValue = a.coverage;
+                        bValue = b.coverage;
+                        break;
+                    default:
+                        aValue = 0; bValue = 0;
+                }
+
+                if (aValue < bValue) return sortConfig.direction === "asc" ? -1 : 1;
+                if (aValue > bValue) return sortConfig.direction === "asc" ? 1 : -1;
+                return 0;
+            });
+        } else {
+            // Default Sort: Total Desc
+            enrichedResult.sort((a, b) => b.totalMonto - a.totalMonto);
+        }
+
+        // 4. Add Rank (after sort)
+        const finalResult = enrichedResult.map((item, index) => ({
             ...item,
-            rank: index + 1,
-            share: grandTotal > 0 ? (item.totalMonto / grandTotal) * 100 : 0
+            rank: index + 1
         }));
 
         return {
-            productosFiltered: enrichedResult,
-            rankingData: enrichedResult
+            productosFiltered: finalResult,
+            rankingData: finalResult
         };
-    }, [data?.productos, busqueda, ocultarCero, salesStatus]);
+    }, [data?.productos, busqueda, salesStatus, sortConfig, meses]);
+
+    const handleSort = (key: string) => {
+        setSortConfig((current) => {
+            if (current?.key === key) {
+                if (current.direction === "asc") return { key, direction: "desc" };
+                return null; // Reset sorting if clicking same column twice in desc order
+            }
+            return { key, direction: "asc" }; // Default to asc when clicking new column
+        });
+    };
 
     // Paginación
     const { paginatedProducts, totalPages } = useMemo(() => {
@@ -119,7 +255,9 @@ export default function AnalisisVentasPage() {
         return {
             totalVentas: grandTotal,
             promedioPeriodo: grandTotal / meses,
-            topProducto: productosFiltered[0]?.producto.sku || "N/A"
+            topProducto: productosFiltered[0]?.producto.sku || "N/A",
+            // Calc active products locally since meta.totalProductos is now the Universe size
+            productosConVentas: data.productos.filter(p => p.totalMonto > 0).length
         };
     }, [data, productosFiltered, meses]);
 
@@ -135,9 +273,63 @@ export default function AnalisisVentasPage() {
                             <BarChart3 className="h-6 w-6 text-purple-600" />
                         </div>
                         <div>
-                            <h1 className="text-xl font-bold text-slate-900">Analítica Detallada</h1>
-                            <p className="text-xs text-slate-500">Ranking y Desempeño por SKU</p>
+                            <h1 className="text-xl font-bold text-slate-900">Ranking de Productos</h1>
+                            <p className="text-xs text-slate-500">Analítica detallada y desempeño por SKU</p>
                         </div>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                        <div className="bg-slate-50 rounded-lg p-1 flex items-center border border-slate-200 gap-1">
+                            {/* Toggle Mode */}
+                            <button
+                                onClick={() => setPeriodMode("preset")}
+                                className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${periodMode === "preset" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                            >
+                                Períodos
+                            </button>
+                            <button
+                                onClick={() => setPeriodMode("custom")}
+                                className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${periodMode === "custom" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                            >
+                                Personalizado
+                            </button>
+                        </div>
+
+                        {periodMode === "preset" ? (
+                            <div className="bg-slate-50 rounded-lg p-1 flex items-center border border-slate-200 ml-2">
+                                <span className="text-xs font-semibold px-2 text-slate-500">Meses:</span>
+                                <select
+                                    value={meses}
+                                    onChange={(e) => setMeses(Number(e.target.value))}
+                                    className="px-2 py-1 text-sm bg-transparent border-none focus:outline-none focus:ring-0 text-slate-700 font-medium cursor-pointer"
+                                >
+                                    <option value={3}>Últimos 3 meses</option>
+                                    <option value={6}>Últimos 6 meses</option>
+                                    <option value={12}>Últimos 12 meses</option>
+                                </select>
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-2 ml-2">
+                                <div className="flex items-center bg-white border border-slate-200 rounded-lg px-2 py-1">
+                                    <span className="text-[10px] uppercase font-bold text-slate-400 mr-2">Desde</span>
+                                    <input
+                                        type="month"
+                                        value={customRange.start}
+                                        onChange={(e) => setCustomRange(prev => ({ ...prev, start: e.target.value }))}
+                                        className="text-sm font-medium text-slate-700 focus:outline-none bg-transparent"
+                                    />
+                                </div>
+                                <div className="flex items-center bg-white border border-slate-200 rounded-lg px-2 py-1">
+                                    <span className="text-[10px] uppercase font-bold text-slate-400 mr-2">Hasta</span>
+                                    <input
+                                        type="month"
+                                        value={customRange.end}
+                                        onChange={(e) => setCustomRange(prev => ({ ...prev, end: e.target.value }))}
+                                        className="text-sm font-medium text-slate-700 focus:outline-none bg-transparent"
+                                    />
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </header>
 
@@ -156,7 +348,7 @@ export default function AnalisisVentasPage() {
                         />
                         <KPICard
                             title="SKUs con Movimiento"
-                            value={productosFiltered.length}
+                            value={kpis.productosConVentas || 0}
                             icon={Package}
                         />
                         <KPICard
@@ -170,12 +362,13 @@ export default function AnalisisVentasPage() {
                     <FiltersBar
                         marca={marca}
                         onMarcaChange={handleFilterChange(setMarca)}
+                        // Meses controlled by header
                         meses={meses}
-                        onMesesChange={handleFilterChange(setMeses)}
+                        onMesesChange={() => { }}
+                        hidePeriodSelector={true}
                         busqueda={busqueda}
                         onBusquedaChange={handleFilterChange(setBusqueda)}
-                        ocultarCero={ocultarCero}
-                        onOcultarCeroChange={handleFilterChange(setOcultarCero)}
+
                         salesStatus={salesStatus}
                         onSalesStatusChange={handleFilterChange(setSalesStatus)}
                         estadosSeleccionados={[]}
@@ -212,16 +405,116 @@ export default function AnalisisVentasPage() {
                                 <table className="w-full text-sm text-left">
                                     <thead className="bg-slate-50 text-slate-600 font-medium border-b border-slate-200">
                                         <tr>
-                                            <th className="px-4 py-3 w-16 text-center">#</th>
-                                            <th className="px-4 py-3">Producto</th>
-                                            <th className="px-4 py-3 text-right">Total ({meses} m)</th>
-                                            <th className="px-4 py-3 text-right">Promedio/Mes</th>
-                                            <th className="px-4 py-3 text-right">% Part.</th>
-                                            {data?.meta.columnas.slice(0, 3).map((col, idx) => (
-                                                <th key={idx} className="px-4 py-3 text-right text-xs uppercase tracking-wider text-slate-400">
-                                                    {col}
-                                                </th>
-                                            ))}
+                                            <th className="px-4 py-3 sticky left-0 bg-slate-50 z-10 w-16 text-center">#</th>
+                                            <th className="px-4 py-3 sticky left-16 bg-slate-50 z-10 w-40">
+                                                <button
+                                                    onClick={() => handleSort("familia")}
+                                                    className="flex items-center gap-1 hover:text-slate-900 group"
+                                                >
+                                                    Familia
+                                                    {sortConfig?.key === "familia" ? (
+                                                        sortConfig.direction === "asc" ? <ChevronUp className="h-4 w-4 text-indigo-600" /> : <ChevronDown className="h-4 w-4 text-indigo-600" />
+                                                    ) : (
+                                                        <ChevronsUpDown className="h-4 w-4 text-slate-300 group-hover:text-slate-500" />
+                                                    )}
+                                                </button>
+                                            </th>
+                                            <th className="px-4 py-3 sticky left-56 bg-slate-50 z-10 w-32">
+                                                <button
+                                                    onClick={() => handleSort("sku")}
+                                                    className="flex items-center gap-1 hover:text-slate-900 group"
+                                                >
+                                                    SKU
+                                                    {sortConfig?.key === "sku" ? (
+                                                        sortConfig.direction === "asc" ? <ChevronUp className="h-4 w-4 text-indigo-600" /> : <ChevronDown className="h-4 w-4 text-indigo-600" />
+                                                    ) : (
+                                                        <ChevronsUpDown className="h-4 w-4 text-slate-300 group-hover:text-slate-500" />
+                                                    )}
+                                                </button>
+                                            </th>
+                                            <th className="px-4 py-3 w-64">
+                                                <button
+                                                    onClick={() => handleSort("descripcion")}
+                                                    className="flex items-center gap-1 hover:text-slate-900 group"
+                                                >
+                                                    Descripción
+                                                    {sortConfig?.key === "descripcion" ? (
+                                                        sortConfig.direction === "asc" ? <ChevronUp className="h-4 w-4 text-indigo-600" /> : <ChevronDown className="h-4 w-4 text-indigo-600" />
+                                                    ) : (
+                                                        <ChevronsUpDown className="h-4 w-4 text-slate-300 group-hover:text-slate-500" />
+                                                    )}
+                                                </button>
+                                            </th>
+
+                                            {/* NEW METRICS COLUMNS */}
+                                            <th className="px-4 py-3 text-center min-w-[100px]">
+                                                <button
+                                                    onClick={() => handleSort("abc")}
+                                                    className="flex items-center justify-center gap-1 w-full hover:text-slate-900 group"
+                                                >
+                                                    Clasif.
+                                                    {sortConfig?.key === "abc" ? (
+                                                        sortConfig.direction === "asc" ? <ChevronUp className="h-4 w-4 text-indigo-600" /> : <ChevronDown className="h-4 w-4 text-indigo-600" />
+                                                    ) : (
+                                                        <ChevronsUpDown className="h-4 w-4 text-slate-300 group-hover:text-slate-500" />
+                                                    )}
+                                                </button>
+                                            </th>
+                                            <th className="px-4 py-3 text-center min-w-[120px]">
+                                                <button
+                                                    onClick={() => handleSort("trend")}
+                                                    className="flex items-center justify-center gap-1 w-full hover:text-slate-900 group"
+                                                >
+                                                    Tendencia
+                                                    {sortConfig?.key === "trend" ? (
+                                                        sortConfig.direction === "asc" ? <ChevronUp className="h-4 w-4 text-indigo-600" /> : <ChevronDown className="h-4 w-4 text-indigo-600" />
+                                                    ) : (
+                                                        <ChevronsUpDown className="h-4 w-4 text-slate-300 group-hover:text-slate-500" />
+                                                    )}
+                                                </button>
+                                            </th>
+                                            <th className="px-4 py-3 text-center min-w-[100px]">
+                                                <button
+                                                    onClick={() => handleSort("coverage")}
+                                                    className="flex items-center justify-center gap-1 w-full hover:text-slate-900 group"
+                                                >
+                                                    Cobertura
+                                                    {sortConfig?.key === "coverage" ? (
+                                                        sortConfig.direction === "asc" ? <ChevronUp className="h-4 w-4 text-indigo-600" /> : <ChevronDown className="h-4 w-4 text-indigo-600" />
+                                                    ) : (
+                                                        <ChevronsUpDown className="h-4 w-4 text-slate-300 group-hover:text-slate-500" />
+                                                    )}
+                                                </button>
+                                            </th>
+                                            <th className="px-4 py-3 text-right font-bold text-slate-800 bg-slate-100 min-w-[120px]">
+                                                <button
+                                                    onClick={() => handleSort("total")}
+                                                    className="flex items-center justify-end gap-1 w-full hover:text-slate-900 group"
+                                                >
+                                                    Total
+                                                    {sortConfig?.key === "total" ? (
+                                                        sortConfig.direction === "asc" ? <ChevronUp className="h-4 w-4 text-indigo-600" /> : <ChevronDown className="h-4 w-4 text-indigo-600" />
+                                                    ) : (
+                                                        <ChevronsUpDown className="h-4 w-4 text-slate-300 group-hover:text-slate-500" />
+                                                    )}
+                                                </button>
+                                            </th>
+                                            <th className="px-4 py-3 text-right font-bold text-indigo-700 bg-indigo-50 min-w-[120px]">
+                                                <button
+                                                    onClick={() => handleSort("promedio")}
+                                                    className="flex items-center justify-end gap-1 w-full hover:text-indigo-900 group"
+                                                >
+                                                    Promedio
+                                                    {sortConfig?.key === "promedio" ? (
+                                                        sortConfig.direction === "asc" ? <ChevronUp className="h-4 w-4 text-indigo-600" /> : <ChevronDown className="h-4 w-4 text-indigo-600" />
+                                                    ) : (
+                                                        <ChevronsUpDown className="h-4 w-4 text-slate-300 group-hover:text-slate-500" />
+                                                    )}
+                                                </button>
+                                            </th>
+                                            <th className="px-4 py-3 text-right font-bold text-slate-600 bg-slate-50 min-w-[100px]">
+                                                % Part.
+                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
@@ -230,15 +523,29 @@ export default function AnalisisVentasPage() {
                                                 <td className="px-4 py-3 text-center font-bold text-slate-400 group-hover:text-purple-600">
                                                     {row.rank}
                                                 </td>
+                                                <td className="px-4 py-3 text-slate-500">
+                                                    {row.producto.familia || "-"}
+                                                </td>
+                                                <td className="px-4 py-3 font-medium text-slate-900">
+                                                    {row.producto.sku}
+                                                </td>
+                                                <td className="px-4 py-3 text-slate-500 truncate max-w-[200px]" title={row.producto.descripcion}>
+                                                    {row.producto.descripcion}
+                                                </td>
+
+                                                {/* METRICS BODY */}
+                                                <td className="px-4 py-3 text-center">
+                                                    <ClassificationBadge classification={row.abcClass} />
+                                                </td>
                                                 <td className="px-4 py-3">
-                                                    <div>
-                                                        <div className="font-medium text-slate-900">{row.producto.sku}</div>
-                                                        <div className="text-xs text-slate-500 truncate max-w-[200px]" title={row.producto.descripcion}>
-                                                            {row.producto.descripcion}
-                                                        </div>
+                                                    <div className="flex justify-center">
+                                                        <TrendBadge value={row.trend} />
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-3 text-right font-bold text-slate-800">
+                                                <td className="px-4 py-3 text-center">
+                                                    <CoverageBadge value={row.coverage} />
+                                                </td>
+                                                <td className="px-4 py-3 text-right font-bold text-slate-900 bg-slate-50">
                                                     {formatCLP(row.totalMonto)}
                                                 </td>
                                                 <td className="px-4 py-3 text-right font-mono text-purple-700 bg-purple-50/30">
@@ -255,15 +562,6 @@ export default function AnalisisVentasPage() {
                                                         </div>
                                                     </div>
                                                 </td>
-                                                {row.ventasMeses.slice(0, 3).map((venta, idx) => (
-                                                    <td key={idx} className="px-4 py-3 text-right text-slate-500 text-xs">
-                                                        {venta.montoNeto > 0 ? (
-                                                            formatCLP(venta.montoNeto)
-                                                        ) : (
-                                                            "-"
-                                                        )}
-                                                    </td>
-                                                ))}
                                             </tr>
                                         ))}
                                     </tbody>

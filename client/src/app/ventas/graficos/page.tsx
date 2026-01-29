@@ -281,8 +281,8 @@ export default function GraficosVentasPage() {
                             <TrendingUp className="h-6 w-6 text-indigo-600" />
                         </div>
                         <div>
-                            <h1 className="text-xl font-bold text-slate-900">Gráficos y Objetivos</h1>
-                            <p className="text-xs text-slate-500">Visualización de tendencias, market share y metas</p>
+                            <h1 className="text-xl font-bold text-slate-900">Análisis de Mercado</h1>
+                            <p className="text-xs text-slate-500">Visualización de tendencias, market share y rendimiento</p>
                         </div>
                     </div>
 
@@ -397,7 +397,9 @@ export default function GraficosVentasPage() {
                                 <TendenciasChart
                                     data={tendencias}
                                     selectedFamilies={selectedFamilies}
-                                    allFamilies={allFamilies}
+                                    allEntities={groupedData.allEntities}
+                                    rawFamilies={groupedData.rawFamilies}
+                                    familyGroups={familyGroups}
                                     onToggleFamily={toggleFamily}
                                     onSelectAll={selectAll}
                                     onClearAll={clearAll}
@@ -411,6 +413,7 @@ export default function GraficosVentasPage() {
                                     metric={tendenciasMetric}
                                     selectedFamilies={selectedFamilies}
                                     loading={isLoadingTrends}
+                                    familyGroups={familyGroups}
                                 />
                             </div>
                         </div>

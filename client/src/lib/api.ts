@@ -129,6 +129,7 @@ export interface ProductoVentasRow {
         mes: number;
         montoVendido: number;
         cantidadVendida: number;
+        stockActual: number;
     };
 }
 
@@ -148,12 +149,21 @@ export interface VentasDashboardResponse {
     productos: ProductoVentasRow[];
 }
 
-export async function fetchVentasDashboard(meses: number, marca?: string): Promise<VentasDashboardResponse> {
-    const params = new URLSearchParams({ meses: meses.toString() });
-    if (marca) {
-        params.append("marca", marca);
+export async function fetchVentasDashboard(params: number | DateRangeParams, marca?: string): Promise<VentasDashboardResponse> {
+    const query = new URLSearchParams();
+
+    if (typeof params === 'number') {
+        query.append("meses", params.toString());
+    } else {
+        if (params.meses) query.append("meses", params.meses.toString());
+        if (params.start) query.append("start", params.start);
+        if (params.end) query.append("end", params.end);
     }
-    const { data } = await api.get<VentasDashboardResponse>(`/ventas/dashboard?${params}`);
+
+    if (marca) {
+        query.append("marca", marca);
+    }
+    const { data } = await api.get<VentasDashboardResponse>(`/ventas/dashboard?${query.toString()}`);
     return data;
 }
 

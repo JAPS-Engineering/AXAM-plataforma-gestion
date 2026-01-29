@@ -10,6 +10,7 @@ interface TendenciasTableProps {
     metric: "money" | "quantity";
     selectedFamilies: string[];
     loading?: boolean;
+    familyGroups?: { name: string; families: string[] }[]; // Optional to avoid breaking if not immediately passed
 }
 
 type SortDirection = "asc" | "desc" | null;
@@ -53,7 +54,7 @@ function SortButton({ column, currentSort, onSort, isNumeric = false }: { column
     );
 }
 
-export function TendenciasTable({ data, metric, selectedFamilies, loading }: TendenciasTableProps) {
+export function TendenciasTable({ data, metric, selectedFamilies, loading, familyGroups }: TendenciasTableProps) {
     const [sortConfig, setSortConfig] = useState<SortConfig>({ column: "total", direction: "desc" });
 
     const handleSort = (column: SortColumn) => {
@@ -70,7 +71,18 @@ export function TendenciasTable({ data, metric, selectedFamilies, loading }: Ten
     const tableData = useMemo(() => {
         if (!data?.tendencias || !data.familias) return [];
 
-        const familiesToUse = data.familias.filter(f => selectedFamilies.includes(f));
+        // Expand effective families
+        const effectiveFamilies = new Set<string>();
+        selectedFamilies.forEach(selected => {
+            const group = familyGroups?.find(g => g.name === selected);
+            if (group) {
+                group.families.forEach(f => effectiveFamilies.add(f));
+            } else {
+                effectiveFamilies.add(selected);
+            }
+        });
+
+        const familiesToUse = data.familias.filter(f => effectiveFamilies.has(f));
         const months = data.tendencias.map(t => t.label);
 
         // Pivot data: Row = Family

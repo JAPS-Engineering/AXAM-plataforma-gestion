@@ -160,14 +160,14 @@ interface FiltersBarProps {
     onMesesChange: (value: number) => void;
     busqueda: string;
     onBusquedaChange: (value: string) => void;
-    ocultarCero: boolean;
-    onOcultarCeroChange: (value: boolean) => void;
+
     estadosSeleccionados: StockStatus[];
     onEstadosChange: (values: StockStatus[]) => void;
     totalProductos: number;
     productosVisibles: number;
     className?: string;
     hideStockStatus?: boolean;
+    hidePeriodSelector?: boolean;
     salesStatus: 'all' | 'with_sales' | 'without_sales';
     onSalesStatusChange: (value: 'all' | 'with_sales' | 'without_sales') => void;
 }
@@ -180,8 +180,7 @@ export function FiltersBar(props: FiltersBarProps) {
         onMesesChange,
         busqueda,
         onBusquedaChange,
-        ocultarCero,
-        onOcultarCeroChange,
+
         estadosSeleccionados,
         onEstadosChange,
         totalProductos,
@@ -210,21 +209,23 @@ export function FiltersBar(props: FiltersBarProps) {
                 </div>
 
                 {/* Período */}
-                <div className="flex flex-col gap-1">
-                    <label htmlFor="meses" className="text-xs font-medium text-slate-500">
-                        Período
-                    </label>
-                    <select
-                        id="meses"
-                        value={meses}
-                        onChange={(e) => onMesesChange(Number(e.target.value))}
-                        className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                    >
-                        <option value={3}>3 meses</option>
-                        <option value={6}>6 meses</option>
-                        <option value={12}>12 meses</option>
-                    </select>
-                </div>
+                {!props.hidePeriodSelector && (
+                    <div className="flex flex-col gap-1">
+                        <label htmlFor="meses" className="text-xs font-medium text-slate-500">
+                            Período
+                        </label>
+                        <select
+                            id="meses"
+                            value={meses}
+                            onChange={(e) => onMesesChange(Number(e.target.value))}
+                            className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        >
+                            <option value={3}>3 meses</option>
+                            <option value={6}>6 meses</option>
+                            <option value={12}>12 meses</option>
+                        </select>
+                    </div>
+                )}
 
                 {/* Estado Multi-Select */}
                 {!props.hideStockStatus && (
@@ -282,19 +283,7 @@ export function FiltersBar(props: FiltersBarProps) {
                     </select>
                 </div>
 
-                {/* Checkbox Ocultar cero */}
-                <div className="flex items-center gap-2 pt-5">
-                    <input
-                        id="ocultarCero"
-                        type="checkbox"
-                        checked={ocultarCero}
-                        onChange={(e) => onOcultarCeroChange(e.target.checked)}
-                        className="h-4 w-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
-                    />
-                    <label htmlFor="ocultarCero" className="text-sm text-slate-600">
-                        Ocultar sin ventas
-                    </label>
-                </div>
+
 
                 {/* Contador */}
                 <div className="flex items-center gap-2 ml-auto pt-5">

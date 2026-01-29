@@ -155,12 +155,15 @@ async function getVentasDashboard(req, res) {
                     ano: endYear, // Proxy aproximado
                     mes: endMonth,
                     montoVendido: ventaActualDB?.montoNeto || 0,
-                    cantidadVendida: ventaActualDB?.cantidadVendida || 0
+                    cantidadVendida: ventaActualDB?.cantidadVendida || 0,
+                    stockActual: ventaActualDB?.stockActual || 0
                 }
             };
         });
 
-        const rowsConVentas = rows.filter(r => r.totalMonto > 0);
+        // const rowsConVentas = rows.filter(r => r.totalMonto > 0);
+        // Retornamos todos los productos para que el frontend maneje el filtrado (con/sin ventas)
+        const rowsFinal = rows;
 
         res.json({
             meta: {
@@ -168,12 +171,12 @@ async function getVentasDashboard(req, res) {
                 marca: marca || null,
                 mesActual: { ano: endYear, mes: endMonth },
                 columnas: monthsArray.map(m => m.label),
-                totalProductos: rowsConVentas.length,
+                totalProductos: rowsFinal.length,
                 totalMontoPeriodo: totalMontoGlobal,
                 promedioMontoPeriodo: parseFloat((totalMontoGlobal / monthsArray.length).toFixed(0)),
                 generadoEn: new Date().toISOString()
             },
-            productos: rowsConVentas
+            productos: rowsFinal
         });
 
     } catch (error) {

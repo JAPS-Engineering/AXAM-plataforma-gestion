@@ -87,7 +87,7 @@ export default function AnalisisPage() {
     const [mesesHistorico, setMesesHistorico] = useState(6);
     const [mesesCobertura, setMesesCobertura] = useState(2);
     const [soloEnQuiebre, setSoloEnQuiebre] = useState(false);
-    const [ocultarCero, setOcultarCero] = useState(true);
+
     const [salesStatus, setSalesStatus] = useState<'all' | 'with_sales' | 'without_sales'>('all');
 
     // Estados de datos
@@ -182,14 +182,14 @@ export default function AnalisisPage() {
         }
 
         // Unified sales filter logic
-        if (salesStatus === 'with_sales' || ocultarCero) {
+        if (salesStatus === 'with_sales') {
             result = result.filter((p) => (p.promedioVenta || 0) > 0);
         } else if (salesStatus === 'without_sales') {
             result = result.filter((p) => (p.promedioVenta || 0) === 0);
         }
 
         return result;
-    }, [data?.items, search, salesStatus, ocultarCero]);
+    }, [data?.items, search, salesStatus]);
 
     // Guardar valor de A Comprar
     const handleSaveCompra = async (item: SuggestedPurchase) => {
@@ -359,18 +359,7 @@ export default function AnalisisPage() {
                                 </label>
                             </div>
 
-                            {/* Ocultar sin ventas */}
-                            <div className="flex items-end">
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        checked={ocultarCero}
-                                        onChange={(e) => setOcultarCero(e.target.checked)}
-                                        className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
-                                    />
-                                    <span className="text-sm text-slate-700">Ocultar sin ventas</span>
-                                </label>
-                            </div>
+
 
                             {/* Filtro de Ventas */}
                             <div>

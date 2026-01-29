@@ -245,8 +245,20 @@ export function MarketShareChart({
                                     <button onClick={onSelectAll} className="flex-1 text-[10px] font-bold py-1.5 bg-indigo-50 text-indigo-700 rounded-md hover:bg-indigo-100">Todas</button>
                                     <button onClick={onClearAll} className="flex-1 text-[10px] font-bold py-1.5 bg-slate-50 text-slate-600 rounded-md hover:bg-slate-100">Ninguna</button>
                                 </div>
+                                <div className="px-2 mb-2">
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            placeholder="Buscar..."
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                            className="w-full pl-7 pr-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-400"
+                                        />
+                                        <Filter className="absolute left-2 top-1.5 h-3.5 w-3.5 text-slate-400" />
+                                    </div>
+                                </div>
                                 <div className="space-y-1 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-200">
-                                    {allEntities.map((entity, idx) => {
+                                    {allEntities.filter(e => e.toLowerCase().includes(searchTerm.toLowerCase())).map((entity, idx) => {
                                         const isSelected = selectedEntities.includes(entity);
                                         const dataItem = data?.find(d => d.name === entity);
                                         const color = dataItem?.color || colors[idx % colors.length];
