@@ -14,15 +14,23 @@ function getProductIdBySku(db, sku) {
 }
 
 /**
+ * Borrar todas las ventas de un mes y año específico para un reinicio limpio
+ */
+function clearVentasMensuales(db, ano, mes) {
+    const stmt = db.prepare('DELETE FROM ventas_mensuales WHERE ano = ? AND mes = ?');
+    stmt.run(ano, mes);
+}
+
+/**
  * Guardar o actualizar venta mensual
  */
 function saveVentaMensual(db, productoId, ano, mes, cantidad, montoNeto, vendedor = '') {
     try {
-        // Intentar actualizar primero
+        // Actualizar SOBREESCRIBIENDO para evitar duplicados en re-sincronizaciones
         const update = db.prepare(`
             UPDATE ventas_mensuales 
-            SET cantidad_vendida = cantidad_vendida + ?,
-                monto_neto = monto_neto + ?,
+            SET cantidad_vendida = ?,
+                monto_neto = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE producto_id = ? AND ano = ? AND mes = ? AND vendedor = ?
         `);
@@ -48,6 +56,9 @@ function saveVentaMensual(db, productoId, ano, mes, cantidad, montoNeto, vendedo
 function saveVentasMensuales(db, ventasPorProducto, ano, mes) {
     let guardadas = 0;
     let noEncontrados = 0;
+
+    // LIMPIEZA INICIAL: Borrar datos existentes del mes para asegurar que no queden duplicados
+    clearVentasMensuales(db, ano, mes);
 
     for (const [key, venta] of Object.entries(ventasPorProducto)) {
         // La clave ahora es "sku|vendedor"

@@ -7,8 +7,8 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
     LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, ComposedChart
 } from "recharts";
-import { useState } from "react";
-import { ChevronLeft, DollarSign, Activity, TrendingUp, PieChart as PieIcon, BarChart3, Calendar } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { ChevronLeft, DollarSign, Activity, TrendingUp, PieChart as PieIcon, BarChart3, Calendar, Filter, CheckSquare, Square, X } from "lucide-react";
 import Link from "next/link";
 import { TargetsSection } from "@/components/targets-section";
 
@@ -45,6 +45,48 @@ export default function GraficosVentasPage() {
     });
 
     const isLoadingAll = isLoading || isLoadingAdv;
+
+    // --- Lógica de Filtros por Familia ---
+    const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+    const allFamilies = useMemo(() => {
+        if (!advancedData?.marketShare) return [];
+        return advancedData.marketShare.map(m => m.name).sort();
+    }, [advancedData]);
+
+    const [selectedFamilies, setSelectedFamilies] = useState<string[]>([]);
+
+    // Inicializar con todas las familias la primera vez que cargan los datos
+    useEffect(() => {
+        if (allFamilies.length > 0 && selectedFamilies.length === 0) {
+            setSelectedFamilies(allFamilies);
+        }
+    }, [allFamilies]);
+
+    const toggleFamily = (family: string) => {
+        setSelectedFamilies(prev =>
+            prev.includes(family)
+                ? prev.filter(f => f !== family)
+                : [...prev, family]
+        );
+    };
+
+    const selectAll = () => setSelectedFamilies(allFamilies);
+    const clearAll = () => setSelectedFamilies([]);
+
+    // Datos filtrados para los gráficos
+    const filteredMarketShare = useMemo(() => {
+        if (!advancedData?.marketShare) return [];
+        return advancedData.marketShare.filter(m => selectedFamilies.includes(m.name));
+    }, [advancedData?.marketShare, selectedFamilies]);
+
+    const filteredVentasPorFamilia = useMemo(() => {
+        if (!advancedData?.ventasPorFamilia) return [];
+        return advancedData.ventasPorFamilia.filter(f => selectedFamilies.includes(f.familia));
+    }, [advancedData?.ventasPorFamilia, selectedFamilies]);
+
+    const totalFiltrado = useMemo(() => {
+        return filteredMarketShare.reduce((acc, curr) => acc + curr.value, 0);
+    }, [filteredMarketShare]);
 
     return (
         <div className="flex h-screen bg-slate-100">
@@ -150,7 +192,7 @@ export default function GraficosVentasPage() {
                             {/* Seccion 2: Market Share & Top Familias */}
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 {/* Market Share Pie Chart */}
-                                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm relative">
                                     <div className="flex items-center justify-between mb-6">
                                         <div>
                                             <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
@@ -159,12 +201,83 @@ export default function GraficosVentasPage() {
                                             </h3>
                                             <p className="text-xs text-slate-500">Participación por Familia de Proveedores ({advancedData?.meta.anoActual})</p>
                                         </div>
+
+                                        <div className="flex items-center gap-2 relative">
+                                            {selectedFamilies.length !== allFamilies.length && (
+                                                <span className="text-[10px] px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-bold">
+                                                    FILTRADO
+                                                </span>
+                                            )}
+
+                                            <button
+                                                onClick={() => setShowFilterDropdown(!showFilterDropdown)}
+                                                className={`p-2 rounded-lg transition-colors ${showFilterDropdown ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-slate-100 text-slate-500'}`}
+                                                title="Filtrar Familias"
+                                            >
+                                                <Filter className="h-5 w-5" />
+                                            </button>
+
+                                            {/* Dropdown de Filtros */}
+                                            {showFilterDropdown && (
+                                                <>
+                                                    <div
+                                                        className="fixed inset-0 z-20"
+                                                        onClick={() => setShowFilterDropdown(false)}
+                                                    />
+                                                    <div className="absolute top-full right-0 mt-2 w-72 bg-white rounded-xl shadow-2xl border border-slate-200 z-30 p-4 animate-in fade-in zoom-in duration-200 origin-top-right">
+                                                        <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
+                                                            <span className="text-sm font-bold text-slate-900">Filtrar Familias</span>
+                                                            <button onClick={() => setShowFilterDropdown(false)}>
+                                                                <X className="h-4 w-4 text-slate-400 hover:text-slate-600" />
+                                                            </button>
+                                                        </div>
+
+                                                        <div className="flex gap-2 mb-3">
+                                                            <button
+                                                                onClick={selectAll}
+                                                                className="flex-1 text-[10px] font-bold py-1.5 bg-indigo-50 text-indigo-700 rounded-md hover:bg-indigo-100 transition-colors"
+                                                            >
+                                                                Todas
+                                                            </button>
+                                                            <button
+                                                                onClick={clearAll}
+                                                                className="flex-1 text-[10px] font-bold py-1.5 bg-slate-50 text-slate-600 rounded-md hover:bg-slate-100 transition-colors"
+                                                            >
+                                                                Ninguna
+                                                            </button>
+                                                        </div>
+
+                                                        <div className="space-y-1 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-200">
+                                                            {allFamilies.map((family, idx) => {
+                                                                const isSelected = selectedFamilies.includes(family);
+                                                                return (
+                                                                    <label
+                                                                        key={idx}
+                                                                        className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded-lg cursor-pointer transition-colors"
+                                                                    >
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={isSelected}
+                                                                            onChange={() => toggleFamily(family)}
+                                                                            className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                                                        />
+                                                                        <span className={`text-xs ${isSelected ? 'text-slate-900 font-medium' : 'text-slate-500'}`}>
+                                                                            {family || 'Sin Familia'}
+                                                                        </span>
+                                                                    </label>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
                                     </div>
                                     <div className="h-[350px] w-full flex items-center justify-center">
                                         <ResponsiveContainer width="100%" height="100%">
                                             <PieChart>
                                                 <Pie
-                                                    data={advancedData?.marketShare || []}
+                                                    data={filteredMarketShare}
                                                     cx="50%"
                                                     cy="50%"
                                                     innerRadius={80}
@@ -172,8 +285,12 @@ export default function GraficosVentasPage() {
                                                     paddingAngle={2}
                                                     dataKey="value"
                                                 >
-                                                    {(advancedData?.marketShare || []).map((entry, index) => (
-                                                        <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} stroke="none" />
+                                                    {filteredMarketShare.map((entry, index) => (
+                                                        <Cell
+                                                            key={`cell-${index}`}
+                                                            fill={PIE_COLORS[allFamilies.indexOf(entry.name) % PIE_COLORS.length]}
+                                                            stroke="none"
+                                                        />
                                                     ))}
                                                 </Pie>
                                                 <Tooltip
@@ -189,8 +306,9 @@ export default function GraficosVentasPage() {
                                             </PieChart>
                                         </ResponsiveContainer>
                                     </div>
-                                    <div className="mt-4 text-center text-xs text-slate-400">
-                                        Total Año: {formatTooltipCLP(advancedData?.meta.totalVentaAnual || 0)}
+                                    <div className="mt-4 text-center text-xs text-slate-500 flex flex-col gap-1">
+                                        <div>Total Visible: <span className="font-bold text-indigo-600">{formatTooltipCLP(totalFiltrado)}</span></div>
+                                        <div className="text-[10px] text-slate-400">Total Año (Global): {formatTooltipCLP(advancedData?.meta.totalVentaAnual || 0)}</div>
                                     </div>
                                 </div>
 
@@ -209,7 +327,7 @@ export default function GraficosVentasPage() {
                                         <ResponsiveContainer width="100%" height="100%">
                                             <BarChart
                                                 layout="vertical"
-                                                data={advancedData?.ventasPorFamilia.slice(0, 8) || []}
+                                                data={filteredVentasPorFamilia.slice(0, 15) || []}
                                                 margin={{ top: 5, right: 30, left: 60, bottom: 5 }}
                                             >
                                                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
