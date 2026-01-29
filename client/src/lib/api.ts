@@ -218,6 +218,7 @@ export interface RendimientoAnualRow {
 export interface GraficosAvanzadosResponse {
     ventasPorFamilia: VentasFamiliaRow[];
     marketShare: MarketShareRow[];
+    ventasPorVendedor: MarketShareRow[];
     rendimientoAnual: RendimientoAnualRow[];
     meta: {
         anoActual: number;

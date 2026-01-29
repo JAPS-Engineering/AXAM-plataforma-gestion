@@ -10,7 +10,6 @@ import {
 import { useState, useMemo, useEffect } from "react";
 import { ChevronLeft, DollarSign, Activity, TrendingUp, PieChart as PieIcon, BarChart3, Calendar, Filter, CheckSquare, Square, X } from "lucide-react";
 import Link from "next/link";
-import { TargetsSection } from "@/components/targets-section";
 
 // Formateadores
 const formatCLP = (value: number) => {
@@ -138,9 +137,6 @@ export default function GraficosVentasPage() {
                         </div>
                     ) : (
                         <div className="space-y-6 pb-10">
-
-                            {/* Seccion 0: Objetivos (Targets) - NUEVO */}
-                            <TargetsSection />
 
                             {/* Seccion 1: Resumen General */}
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
