@@ -39,6 +39,13 @@ async function main() {
         logInfo('Limpiando tabla VentaActual...');
         await prisma.ventaActual.deleteMany({});
 
+        // Asegurar que existe el vendedor "default" (vacío)
+        await prisma.vendedor.upsert({
+            where: { codigo: "" },
+            update: { activo: true },
+            create: { codigo: "", nombre: "Sin Asignar", activo: true }
+        });
+
         logInfo('Insertando registros actualizados...');
         let insertados = 0;
         let noEncontrados = 0;
@@ -57,7 +64,7 @@ async function main() {
                 continue;
             }
 
-            // Asegurar que el vendedor existe
+            // Asegurar que el vendedor existe (si tiene código)
             if (vendedor) {
                 await prisma.vendedor.upsert({
                     where: { codigo: vendedor },
@@ -70,7 +77,7 @@ async function main() {
             await prisma.ventaActual.create({
                 data: {
                     productoId: producto.id,
-                    vendedor: vendedor || 'Sin Vendedor',
+                    vendedor: vendedor || '',
                     cantidadVendida: venta.cantidad,
                     montoNeto: venta.montoNeto,
                     stockActual: 0 // Se actualiza con otro script

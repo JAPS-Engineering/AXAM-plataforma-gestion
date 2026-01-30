@@ -219,6 +219,13 @@ async function syncCurrentMonthData(includeToday = false) {
         // Si es el primer día del mes y no incluimos hoy, el rango puede quedar vacío
         await prisma.ventaActual.deleteMany({});
 
+        // Asegurar que existe el vendedor "default" (vacío) para stock sin ventas
+        await prisma.vendedor.upsert({
+            where: { codigo: "" },
+            update: { activo: true },
+            create: { codigo: "", nombre: "Sin Asignar", activo: true }
+        });
+
         let monthlySales = new Map();
 
         if (startDate <= endDate) {
