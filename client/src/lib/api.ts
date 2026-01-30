@@ -206,7 +206,7 @@ export interface DateRangeParams {
     end?: string;   // YYYY-MM
 }
 
-export async function fetchVentasResumen(params: number | DateRangeParams): Promise<VentasResumenResponse> {
+export async function fetchVentasResumen(params: number | DateRangeParams, marca?: string): Promise<VentasResumenResponse> {
     const query = new URLSearchParams();
 
     if (typeof params === 'number') {
@@ -215,6 +215,10 @@ export async function fetchVentasResumen(params: number | DateRangeParams): Prom
         if (params.meses) query.append("meses", params.meses.toString());
         if (params.start) query.append("start", params.start);
         if (params.end) query.append("end", params.end);
+    }
+
+    if (marca) {
+        query.append("marca", marca);
     }
 
     const { data } = await api.get<VentasResumenResponse>(`/ventas/resumen?${query.toString()}`);
@@ -255,10 +259,11 @@ export interface GraficosAvanzadosResponse {
     };
 }
 
-export async function fetchGraficosAvanzados(params?: { start?: string; end?: string }): Promise<GraficosAvanzadosResponse> {
+export async function fetchGraficosAvanzados(params?: { start?: string; end?: string; marca?: string }): Promise<GraficosAvanzadosResponse> {
     const query = new URLSearchParams();
     if (params?.start) query.append("start", params.start);
     if (params?.end) query.append("end", params.end);
+    if (params?.marca) query.append("marca", params.marca);
 
     const { data } = await api.get<GraficosAvanzadosResponse>(`/ventas/graficos-avanzados?${query.toString()}`);
     return data;
@@ -373,7 +378,7 @@ export interface VentasTendenciasResponse {
     familias: string[];
 }
 
-export async function fetchVentasTendencias(params: number | DateRangeParams = 6): Promise<VentasTendenciasResponse> {
+export async function fetchVentasTendencias(params: number | DateRangeParams = 6, marca?: string): Promise<VentasTendenciasResponse> {
     const query = new URLSearchParams();
 
     if (typeof params === 'number') {
@@ -384,6 +389,33 @@ export async function fetchVentasTendencias(params: number | DateRangeParams = 6
         if (params.end) query.append("end", params.end);
     }
 
+    if (marca) {
+        query.append("marca", marca);
+    }
+
     const { data } = await api.get<VentasTendenciasResponse>(`/ventas/tendencias?${query.toString()}`);
     return data;
+}
+
+// === API VENDEDORES ===
+
+export interface Vendedor {
+    id: number;
+    codigo: string;
+    nombre: string | null;
+    activo: boolean;
+}
+
+export async function fetchVendedores(): Promise<Vendedor[]> {
+    const { data } = await api.get<Vendedor[]>("/vendedores");
+    return data;
+}
+
+export async function updateVendedor(id: number, data: Partial<Vendedor>): Promise<Vendedor> {
+    const response = await api.put<Vendedor>(`/vendedores/${id}`, data);
+    return response.data;
+}
+
+export async function deleteVendedor(id: number): Promise<void> {
+    await api.delete(`/vendedores/${id}`);
 }

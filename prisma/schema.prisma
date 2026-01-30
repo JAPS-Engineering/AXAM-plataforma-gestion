@@ -55,6 +55,7 @@ model VentaHistorica {
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   producto Producto @relation(fields: [productoId], references: [id], onDelete: Cascade)
+  vendedorRel Vendedor? @relation(fields: [vendedor], references: [codigo])
 
   @@unique([productoId, ano, mes, vendedor])
   @@index([productoId])
@@ -74,6 +75,7 @@ model VentaActual {
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   producto Producto @relation(fields: [productoId], references: [id], onDelete: Cascade)
+  vendedorRel Vendedor? @relation(fields: [vendedor], references: [codigo])
 
   @@unique([productoId, vendedor])
   @@index([productoId])
@@ -229,7 +231,24 @@ model ProyeccionVenta {
   observacion   String?
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
+  vendedorRel   Vendedor? @relation(fields: [vendedorId], references: [codigo])
 
   @@unique([vendedorId, ano, mes])
   @@map("proyecciones_venta")
+}
+
+// Gestión de Vendedores (Nombres/Apodos)
+model Vendedor {
+  id        Int      @id @default(autoincrement())
+  codigo    String   @unique // Sigla original de Manager+ (ms, hm, etc)
+  nombre    String?          // Apodo o nombre legible
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  ventasHistoricas VentaHistorica[]
+  ventasActuales   VentaActual[]
+  proyecciones     ProyeccionVenta[]
+
+  @@map("vendedores")
 }

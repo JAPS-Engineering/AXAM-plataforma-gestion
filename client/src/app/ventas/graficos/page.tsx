@@ -12,6 +12,7 @@ import { RankingFamiliasChart } from "@/components/ventas/RankingFamiliasChart";
 import { RendimientoAnualChart } from "@/components/ventas/RendimientoAnualChart";
 import { TendenciasChart } from "@/components/ventas/TendenciasChart";
 import { TendenciasTable } from "@/components/ventas/TendenciasTable";
+import { FiltersBar } from "@/components/filters-bar";
 
 // Default helpers
 const getCurrentMonth = () => {
@@ -33,34 +34,36 @@ export default function GraficosVentasPage() {
         end: getCurrentMonth()
     });
 
+    // Filtros state
+    const [marca, setMarca] = useState("");
+
     // Params computados para la API
     const apiParams = useMemo(() => {
         if (periodMode === "preset") {
-            return { meses }; // Pasa { meses: 6 }
+            return { meses, marca };
         } else {
-            return { start: customRange.start, end: customRange.end };
+            return { start: customRange.start, end: customRange.end, marca };
         }
-    }, [periodMode, meses, customRange]);
+    }, [periodMode, meses, customRange, marca]);
 
-    // Query Resumen (Afectado por fechas)
     const { data: resumenData, isLoading, error } = useQuery({
         queryKey: ["ventas-resumen", apiParams],
-        queryFn: () => fetchVentasResumen(apiParams as any),
+        queryFn: () => fetchVentasResumen(apiParams as any, marca || undefined),
         enabled: periodMode === "preset" || (!!customRange.start && !!customRange.end)
     });
 
-    // Query Avanzados (Market Share/Ranking Afectado; Rendimiento Anual No)
+    // Query Avanzados
     const computedAdvancedParams = useMemo(() => {
-        if (periodMode === "custom") return apiParams;
-
-        if (periodMode === "preset") {
-            return {
-                start: getPastMonth(meses - 1),
-                end: getCurrentMonth()
-            };
+        const params: any = { marca };
+        if (periodMode === "custom") {
+            params.start = customRange.start;
+            params.end = customRange.end;
+        } else {
+            params.start = getPastMonth(meses - 1);
+            params.end = getCurrentMonth();
         }
-        return undefined;
-    }, [periodMode, customRange, apiParams, meses]);
+        return params;
+    }, [periodMode, customRange, meses, marca]);
 
     const { data: advancedData, isLoading: isLoadingAdv } = useQuery({
         queryKey: ["graficos-avanzados", computedAdvancedParams],
@@ -69,7 +72,7 @@ export default function GraficosVentasPage() {
 
     const { data: tendencias, isLoading: isLoadingTrends } = useQuery({
         queryKey: ["ventas-tendencias", computedAdvancedParams],
-        queryFn: () => fetchVentasTendencias(computedAdvancedParams),
+        queryFn: () => fetchVentasTendencias(computedAdvancedParams, marca || undefined),
     });
 
     const isLoadingAll = isLoading || isLoadingAdv || isLoadingTrends;
@@ -311,6 +314,7 @@ export default function GraficosVentasPage() {
                                     onChange={(e) => setMeses(Number(e.target.value))}
                                     className="px-2 py-1 text-sm bg-transparent border-none focus:outline-none focus:ring-0 text-slate-700 font-medium cursor-pointer"
                                 >
+                                    <option value={1}>Mes Actual</option>
                                     <option value={3}>Últimos 3 meses</option>
                                     <option value={6}>Últimos 6 meses</option>
                                     <option value={12}>Últimos 12 meses</option>
@@ -340,6 +344,22 @@ export default function GraficosVentasPage() {
                         )}
                     </div>
                 </header>
+
+                <div className="bg-white border-b border-slate-200 px-6 py-2 flex items-center gap-4">
+                    <div className="flex flex-col gap-1">
+                        <label htmlFor="marca" className="text-[10px] uppercase font-bold text-slate-400">
+                            Filtrar por Marca
+                        </label>
+                        <input
+                            id="marca"
+                            type="text"
+                            value={marca}
+                            onChange={(e) => setMarca(e.target.value)}
+                            placeholder="Ej: KC"
+                            className="w-32 px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+                        />
+                    </div>
+                </div>
 
                 <main className="flex-1 overflow-auto p-6 scrollbar-thin scrollbar-thumb-slate-200">
                     {/* Resumen General */}

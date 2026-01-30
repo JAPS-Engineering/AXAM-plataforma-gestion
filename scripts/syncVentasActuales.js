@@ -57,6 +57,15 @@ async function main() {
                 continue;
             }
 
+            // Asegurar que el vendedor existe
+            if (vendedor) {
+                await prisma.vendedor.upsert({
+                    where: { codigo: vendedor },
+                    update: { activo: true },
+                    create: { codigo: vendedor, nombre: vendedor, activo: true }
+                });
+            }
+
             // Crear registro
             await prisma.ventaActual.create({
                 data: {

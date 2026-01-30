@@ -71,11 +71,11 @@ export default function AnalisisVentasPage() {
     // Params computados para la API
     const apiParams = useMemo(() => {
         if (periodMode === "preset") {
-            return { meses };
+            return { meses, marca };
         } else {
-            return { start: customRange.start, end: customRange.end };
+            return { start: customRange.start, end: customRange.end, marca };
         }
-    }, [periodMode, meses, customRange]);
+    }, [periodMode, meses, customRange, marca]);
 
     const { data, isLoading, error } = useQuery({
         queryKey: ["ventas-analytics", apiParams, marca],
@@ -303,6 +303,7 @@ export default function AnalisisVentasPage() {
                                     onChange={(e) => setMeses(Number(e.target.value))}
                                     className="px-2 py-1 text-sm bg-transparent border-none focus:outline-none focus:ring-0 text-slate-700 font-medium cursor-pointer"
                                 >
+                                    <option value={1}>Mes Actual</option>
                                     <option value={3}>Últimos 3 meses</option>
                                     <option value={6}>Últimos 6 meses</option>
                                     <option value={12}>Últimos 12 meses</option>

@@ -102,6 +102,15 @@ async function upsertMonthlySale(productoId, ano, mes, cantidad, montoNeto, vend
         }
     });
 
+    // Asegurar que el vendedor existe en la tabla de Vendedores (Auto-registro)
+    if (vendedor) {
+        await prisma.vendedor.upsert({
+            where: { codigo: vendedor },
+            update: { activo: true },
+            create: { codigo: vendedor, nombre: vendedor, activo: true }
+        });
+    }
+
     if (existing) {
         if (accumulate) {
             await prisma.ventaHistorica.update({
@@ -236,6 +245,15 @@ async function syncCurrentMonthData(includeToday = false) {
             if (!producto) continue;
 
             const stockActual = stockMap.get(sku) || 0;
+
+            // Asegurar que el vendedor existe
+            if (vendedor) {
+                await prisma.vendedor.upsert({
+                    where: { codigo: vendedor },
+                    update: { activo: true },
+                    create: { codigo: vendedor, nombre: vendedor, activo: true }
+                });
+            }
 
             await prisma.ventaActual.create({
                 data: {

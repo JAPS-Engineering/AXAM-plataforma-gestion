@@ -38,6 +38,7 @@ const purchaseRoutes = require('./routes/purchase');
 const ventasRoutes = require('./routes/ventas');
 const targetRoutes = require('./routes/targets');
 const syncRoutes = require('./routes/sync');
+const vendedoresRoutes = require('./routes/vendedores');
 
 app.use('/api/productos', productosRoutes);
 app.use('/api/pedidos', pedidosRoutes);
@@ -47,6 +48,7 @@ app.use('/api/purchase', purchaseRoutes);
 app.use('/api/ventas', ventasRoutes);
 app.use('/api/targets', targetRoutes);
 app.use('/api/sync', syncRoutes);
+app.use('/api/vendedores', vendedoresRoutes);
 
 // Ruta de salud
 app.get('/health', (req, res) => {

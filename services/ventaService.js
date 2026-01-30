@@ -22,9 +22,29 @@ function clearVentasMensuales(db, ano, mes) {
 }
 
 /**
+ * Asegurar que el vendedor existe en la tabla de vendedores
+ */
+function ensureVendedorExists(db, codigo) {
+    if (!codigo) return;
+    try {
+        const check = db.prepare('SELECT id FROM vendedores WHERE codigo = ?');
+        if (!check.get(codigo)) {
+            const insert = db.prepare('INSERT INTO vendedores (codigo, nombre, activo, created_at, updated_at) VALUES (?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)');
+            insert.run(codigo, codigo);
+        }
+    } catch (e) {
+        // Ignorar si la tabla no existe aún o hay error (falla silenciosa para no romper la sync principal)
+    }
+}
+
+/**
  * Guardar o actualizar venta mensual
  */
 function saveVentaMensual(db, productoId, ano, mes, cantidad, montoNeto, vendedor = '') {
+    // Auto-registro del vendedor
+    if (vendedor) {
+        ensureVendedorExists(db, vendedor);
+    }
     try {
         // Actualizar SOBREESCRIBIENDO para evitar duplicados en re-sincronizaciones
         const update = db.prepare(`

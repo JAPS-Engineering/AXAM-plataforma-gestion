@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { TrendingUp } from "lucide-react";
 
 interface VendedorMesData {
@@ -18,6 +18,7 @@ interface VendedoresChartProps {
     anio: number; // For single year views, but we prioritize monthsArray if available
     loading?: boolean;
     monthsArray?: VendedorMesData[]; // New dynamic months
+    vendedores?: Record<string, string>; // Map of code -> nickname
 }
 
 const COLORS = [
@@ -27,7 +28,7 @@ const COLORS = [
 
 const DEFAULT_MONTHS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
-export default function VendedoresChart({ data, objetivos, proyecciones, view, anio, loading, monthsArray }: VendedoresChartProps) {
+export default function VendedoresChart({ data, objetivos, proyecciones, view, anio, loading, monthsArray, vendedores = {} }: VendedoresChartProps) {
     const currentDataSource = view === "Real" ? data : view === "Objetivo" ? objetivos : proyecciones;
 
     // Determine the months to display
@@ -81,7 +82,7 @@ export default function VendedoresChart({ data, objetivos, proyecciones, view, a
 
     if (loading) {
         return (
-            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm relative w-full h-[400px] flex items-center justify-center">
+            <div className="w-full h-full flex items-center justify-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
             </div>
         );
@@ -90,56 +91,117 @@ export default function VendedoresChart({ data, objetivos, proyecciones, view, a
     const hasData = topVendedores.length > 0;
 
     return (
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm relative w-full h-[400px] flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5 text-indigo-500" />
-                    <h3 className="text-sm font-bold text-slate-800">Tendencia por Vendedor ({view})</h3>
-                </div>
-            </div>
-
-            <div className="flex-1 min-h-0 w-full">
+        <div className="w-full h-full flex flex-col">
+            <div className="flex-1 min-h-0 w-full mt-2">
                 {hasData ? (
                     <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                            <XAxis
-                                dataKey="name"
-                                axisLine={false}
-                                tickLine={false}
-                                tick={{ fill: '#64748b', fontSize: 11 }}
-                                dy={10}
-                            />
-                            <YAxis
-                                axisLine={false}
-                                tickLine={false}
-                                tick={{ fill: '#64748b', fontSize: 11 }}
-                                tickFormatter={(val: any) => formatCurrency(Number(val || 0))}
-                            />
-                            <Tooltip
-                                formatter={(value: any) =>
-                                    new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(Number(value || 0))
-                                }
-                                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                            />
-                            <Legend
-                                verticalAlign="bottom"
-                                height={36}
-                                iconType="circle"
-                                wrapperStyle={{ paddingTop: '20px', fontSize: '11px' }}
-                            />
-                            {topVendedores.map((vendedor, index) => (
-                                <Line
-                                    key={vendedor}
-                                    type="monotone"
-                                    dataKey={vendedor}
-                                    stroke={COLORS[index % COLORS.length]}
-                                    strokeWidth={2}
-                                    dot={false}
-                                    activeDot={{ r: 4 }}
+                        {effectiveMonths.length > 1 ? (
+                            <LineChart
+                                key="line-chart"
+                                data={chartData}
+                                margin={{ top: 10, right: 30, left: 20, bottom: 5 }}
+                            >
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                <XAxis
+                                    dataKey="name"
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tick={{ fill: '#64748b', fontSize: 11 }}
+                                    dy={10}
                                 />
-                            ))}
-                        </LineChart>
+                                <YAxis
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tick={{ fill: '#64748b', fontSize: 11 }}
+                                    tickFormatter={(val: any) => formatCurrency(Number(val || 0))}
+                                />
+                                <Tooltip
+                                    itemSorter={(item: any) => -Number(item.value || 0)}
+                                    formatter={(value: any) =>
+                                        new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(Number(value || 0))
+                                    }
+                                    contentStyle={{
+                                        borderRadius: '12px',
+                                        border: 'none',
+                                        boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.2), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
+                                        zIndex: 1000,
+                                        backgroundColor: 'rgba(255, 255, 255, 0.98)'
+                                    }}
+                                    wrapperStyle={{ zIndex: 1000 }}
+                                />
+                                <Legend
+                                    verticalAlign="bottom"
+                                    height={36}
+                                    iconType="circle"
+                                    wrapperStyle={{ paddingTop: '20px', fontSize: '11px' }}
+                                />
+                                {topVendedores.map((vendedor, index) => (
+                                    <Line
+                                        key={vendedor}
+                                        name={vendedores[vendedor] || vendedor}
+                                        type="monotone"
+                                        dataKey={vendedor}
+                                        stroke={COLORS[index % COLORS.length]}
+                                        strokeWidth={2}
+                                        dot={{ r: 4, strokeWidth: 2, fill: '#fff' }}
+                                        activeDot={{ r: 6 }}
+                                    />
+                                ))}
+                            </LineChart>
+                        ) : (
+                            <BarChart
+                                key="bar-chart"
+                                data={chartData}
+                                margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                                barGap={8}
+                            >
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                <XAxis
+                                    dataKey="name"
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tick={{ fill: '#64748b', fontSize: 12, fontWeight: 'bold' }}
+                                    dy={10}
+                                />
+                                <YAxis
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tick={{ fill: '#64748b', fontSize: 11 }}
+                                    tickFormatter={(val: any) => formatCurrency(Number(val || 0))}
+                                />
+                                <Tooltip
+                                    itemSorter={(item: any) => -Number(item.value || 0)}
+                                    cursor={{ fill: 'rgba(241, 245, 249, 0.4)' }}
+                                    formatter={(value: any) =>
+                                        new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(Number(value || 0))
+                                    }
+                                    contentStyle={{
+                                        borderRadius: '12px',
+                                        border: 'none',
+                                        boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.2), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
+                                        zIndex: 1000,
+                                        backgroundColor: 'rgba(255, 255, 255, 0.98)'
+                                    }}
+                                    wrapperStyle={{ zIndex: 1000 }}
+                                />
+                                <Legend
+                                    verticalAlign="bottom"
+                                    height={36}
+                                    iconType="circle"
+                                    wrapperStyle={{ paddingTop: '20px', fontSize: '11px' }}
+                                />
+                                {topVendedores.map((vendedor, index) => (
+                                    <Bar
+                                        key={vendedor}
+                                        name={vendedores[vendedor] || vendedor}
+                                        dataKey={vendedor}
+                                        fill={COLORS[index % COLORS.length]}
+                                        radius={[4, 4, 0, 0]}
+                                        barSize={40}
+                                    />
+                                ))}
+                            </BarChart>
+                        )}
                     </ResponsiveContainer>
                 ) : (
                     <div className="h-full w-full flex items-center justify-center text-slate-400 text-sm italic">
