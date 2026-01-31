@@ -52,8 +52,8 @@ export default function VendedoresChart({ data, objetivos, proyecciones, view, a
     const visibleVendedores = useMemo(() => {
         if (!currentDataSource) return [];
 
-        // Si el usuario proporcionó una selección explícita
-        if (selectedVendedores && selectedVendedores.length > 0) {
+        // Si el usuario proporcionó una selección explícita (aunque sea vacía)
+        if (selectedVendedores !== undefined) {
             return selectedVendedores.filter(v => currentDataSource[v]);
         }
 
