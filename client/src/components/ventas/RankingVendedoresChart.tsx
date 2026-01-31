@@ -6,9 +6,10 @@ interface RankingVendedoresChartProps {
     data: { name: string; value: number; percentage: string }[] | undefined;
     loading: boolean;
     colors: string[];
+    allSellers?: Record<string, string>;
 }
 
-export function RankingVendedoresChart({ data, loading, colors }: RankingVendedoresChartProps) {
+export function RankingVendedoresChart({ data, loading, colors, allSellers }: RankingVendedoresChartProps) {
     if (loading) {
         return (
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm h-[400px] flex items-center justify-center">
@@ -18,6 +19,19 @@ export function RankingVendedoresChart({ data, loading, colors }: RankingVendedo
     }
 
     const hasData = data && data.length > 0;
+
+    // Helper to get color based on global seller index
+    const getSellerColor = (name: string, index: number) => {
+        if (allSellers) {
+            const sellerCodes = Object.keys(allSellers);
+            const code = Object.entries(allSellers).find(([_, n]) => n === name)?.[0];
+            if (code) {
+                const globalIdx = sellerCodes.indexOf(code);
+                return colors[globalIdx % colors.length];
+            }
+        }
+        return colors[index % colors.length];
+    };
 
     return (
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
@@ -31,7 +45,7 @@ export function RankingVendedoresChart({ data, loading, colors }: RankingVendedo
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart
                             layout="vertical"
-                            data={data?.slice(0, 10) || []}
+                            data={data || []}
                             margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
                         >
                             <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
@@ -74,8 +88,8 @@ export function RankingVendedoresChart({ data, loading, colors }: RankingVendedo
                                 background={{ fill: '#f8fafc' }}
                             >
                                 {
-                                    (data?.slice(0, 10) || []).map((_, index) => (
-                                        <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
+                                    (data || []).map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={getSellerColor(entry.name, index)} />
                                     ))
                                 }
                             </Bar>

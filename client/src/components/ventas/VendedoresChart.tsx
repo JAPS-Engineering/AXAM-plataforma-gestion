@@ -19,16 +19,20 @@ interface VendedoresChartProps {
     loading?: boolean;
     monthsArray?: VendedorMesData[]; // New dynamic months
     vendedores?: Record<string, string>; // Map of code -> nickname
+    selectedVendedores?: string[]; // New: Filter for specific sellers
 }
 
 const COLORS = [
-    "#4f46e5", "#10b981", "#3b82f6", "#f59e0b", "#ef4444",
-    "#8b5cf6", "#ec4899", "#06b6d4", "#f97316", "#64748b"
+    '#4f46e5', '#10b981', '#3b82f6', '#f59e0b', '#ef4444',
+    '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#64748b',
+    '#6366f1', '#14b8a6', '#ef4444', '#f97316', '#84cc16',
+    '#22c55e', '#0ea5e9', '#3b82f6', '#a855f7', '#d946ef',
+    '#f43f5e', '#64748b', '#78716c', '#0f766e', '#b45309', '#be185d', '#4338ca', '#1d4ed8'
 ];
 
 const DEFAULT_MONTHS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
-export default function VendedoresChart({ data, objetivos, proyecciones, view, anio, loading, monthsArray, vendedores = {} }: VendedoresChartProps) {
+export default function VendedoresChart({ data, objetivos, proyecciones, view, anio, loading, monthsArray, vendedores = {}, selectedVendedores }: VendedoresChartProps) {
     const currentDataSource = view === "Real" ? data : view === "Objetivo" ? objetivos : proyecciones;
 
     // Determine the months to display
@@ -44,9 +48,16 @@ export default function VendedoresChart({ data, objetivos, proyecciones, view, a
         }));
     }, [monthsArray, anio]);
 
-    // Filtrar vendedores top 10 para no saturar el gráfico
-    const topVendedores = useMemo(() => {
+    // Calcular vendedores visibles: si hay seleccionados usamos esos, sino top 10
+    const visibleVendedores = useMemo(() => {
         if (!currentDataSource) return [];
+
+        // Si el usuario proporcionó una selección explícita
+        if (selectedVendedores && selectedVendedores.length > 0) {
+            return selectedVendedores.filter(v => currentDataSource[v]);
+        }
+
+        // Fallback: Top 10 por monto total
         return Object.entries(currentDataSource)
             .map(([vendedor, meses]) => ({
                 vendedor,
@@ -55,7 +66,7 @@ export default function VendedoresChart({ data, objetivos, proyecciones, view, a
             .sort((a, b) => b.total - a.total)
             .slice(0, 10)
             .map(v => v.vendedor);
-    }, [currentDataSource]);
+    }, [currentDataSource, selectedVendedores]);
 
     const chartData = useMemo(() => {
         if (!currentDataSource) return [];
@@ -67,7 +78,7 @@ export default function VendedoresChart({ data, objetivos, proyecciones, view, a
             const altKey = m.mes.toString();
             const altKeyLegacy = `${m.ano}-${m.mes}`; // Extra fallback
 
-            topVendedores.forEach(vendedor => {
+            visibleVendedores.forEach(vendedor => {
                 entry[vendedor] = currentDataSource[vendedor]?.[key] ??
                     currentDataSource[vendedor]?.[altKey] ??
                     currentDataSource[vendedor]?.[altKeyLegacy] ?? 0;
@@ -75,12 +86,24 @@ export default function VendedoresChart({ data, objetivos, proyecciones, view, a
 
             return entry;
         });
-    }, [topVendedores, currentDataSource, effectiveMonths]);
+    }, [visibleVendedores, currentDataSource, effectiveMonths]);
 
     const formatCurrency = (value: number) => {
         if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
         if (value >= 1000) return `$${(value / 1000).toFixed(0)}k`;
         return `$${value}`;
+    };
+
+    // Helper to get color based on global seller index
+    const getSellerColor = (code: string, index: number) => {
+        if (vendedores) {
+            const sellerCodes = Object.keys(vendedores);
+            const globalIdx = sellerCodes.indexOf(code);
+            if (globalIdx !== -1) {
+                return COLORS[globalIdx % COLORS.length];
+            }
+        }
+        return COLORS[index % COLORS.length];
     };
 
     if (loading) {
@@ -91,7 +114,7 @@ export default function VendedoresChart({ data, objetivos, proyecciones, view, a
         );
     }
 
-    const hasData = topVendedores.length > 0;
+    const hasData = visibleVendedores.length > 0;
 
     return (
         <div className="w-full h-full flex flex-col">
@@ -138,13 +161,13 @@ export default function VendedoresChart({ data, objetivos, proyecciones, view, a
                                     iconType="circle"
                                     wrapperStyle={{ paddingTop: '20px', fontSize: '11px' }}
                                 />
-                                {topVendedores.map((vendedor, index) => (
+                                {visibleVendedores.map((vendedor, index) => (
                                     <Line
                                         key={vendedor}
                                         name={vendedores[vendedor] || vendedor}
                                         type="monotone"
                                         dataKey={vendedor}
-                                        stroke={COLORS[index % COLORS.length]}
+                                        stroke={getSellerColor(vendedor, index)}
                                         strokeWidth={2}
                                         dot={{ r: 4, strokeWidth: 2, fill: '#fff' }}
                                         activeDot={{ r: 6 }}
@@ -193,12 +216,12 @@ export default function VendedoresChart({ data, objetivos, proyecciones, view, a
                                     iconType="circle"
                                     wrapperStyle={{ paddingTop: '20px', fontSize: '11px' }}
                                 />
-                                {topVendedores.map((vendedor, index) => (
+                                {visibleVendedores.map((vendedor, index) => (
                                     <Bar
                                         key={vendedor}
                                         name={vendedores[vendedor] || vendedor}
                                         dataKey={vendedor}
-                                        fill={COLORS[index % COLORS.length]}
+                                        fill={getSellerColor(vendedor, index)}
                                         radius={[4, 4, 0, 0]}
                                         barSize={40}
                                     />

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { Sidebar } from "@/components/sidebar";
-import { RefreshCw, TrendingUp, Target, DollarSign, Wallet, Calendar as CalendarIcon, ChevronLeft, Info, PieChart as PieChartIcon } from "lucide-react";
+import { RefreshCw, TrendingUp, Target, DollarSign, Wallet, Calendar as CalendarIcon, ChevronLeft, Info, PieChart as PieChartIcon, Filter, X } from "lucide-react";
 import Link from "next/link";
 import VendedoresChart from "@/components/ventas/VendedoresChart";
 import VendedoresTable from "@/components/ventas/VendedoresTable";
@@ -22,6 +22,14 @@ const getPastMonth = (monthsAgo: number) => {
     d.setMonth(d.getMonth() - monthsAgo);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
+
+const EXTENDED_PALETTE = [
+    '#4f46e5', '#10b981', '#3b82f6', '#f59e0b', '#ef4444',
+    '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#64748b',
+    '#6366f1', '#14b8a6', '#ef4444', '#f97316', '#84cc16',
+    '#22c55e', '#0ea5e9', '#3b82f6', '#a855f7', '#d946ef',
+    '#f43f5e', '#64748b', '#78716c', '#0f766e', '#b45309', '#be185d', '#4338ca', '#1d4ed8'
+];
 
 interface VendedorMesData {
     ano: number;
@@ -65,11 +73,21 @@ export default function ObjetivosPage() {
     const [selectedFamilies, setSelectedFamilies] = useState<string[]>([]);
     const hasInitializedFamilies = React.useRef(false);
 
-    // Load groups from localStorage
+    // --- State for Trend & Participation Chart Seller Selection ---
+    const [selectedVendedoresTrend, setSelectedVendedoresTrend] = useState<string[]>([]);
+    const [showSellerFilter, setShowSellerFilter] = useState(false);
+    const [sellerSearchTerm, setSellerSearchTerm] = useState("");
+    const hasInitializedSellersTrend = React.useRef(false);
+
+    // Load groups and trend sellers from localStorage
     useEffect(() => {
-        const saved = localStorage.getItem("familyGroups_Objetivos");
-        if (saved) {
-            try { setFamilyGroups(JSON.parse(saved)); } catch (e) { console.error(e); }
+        const savedGroups = localStorage.getItem("familyGroups_Objetivos");
+        if (savedGroups) {
+            try { setFamilyGroups(JSON.parse(savedGroups)); } catch (e) { console.error(e); }
+        }
+        const savedSellers = localStorage.getItem("selectedVendedoresTrend_Objetivos");
+        if (savedSellers) {
+            try { setSelectedVendedoresTrend(JSON.parse(savedSellers)); } catch (e) { console.error(e); }
         }
     }, []);
 
@@ -79,6 +97,13 @@ export default function ObjetivosPage() {
             localStorage.setItem("familyGroups_Objetivos", JSON.stringify(familyGroups));
         }
     }, [familyGroups]);
+
+    // Save Trend Sellers
+    useEffect(() => {
+        if (selectedVendedoresTrend.length > 0) {
+            localStorage.setItem("selectedVendedoresTrend_Objetivos", JSON.stringify(selectedVendedoresTrend));
+        }
+    }, [selectedVendedoresTrend]);
 
     // Period State
     const [periodMode, setPeriodMode] = useState<"preset" | "custom">("preset");
@@ -219,7 +244,7 @@ export default function ObjetivosPage() {
 
         // MODE 2: PLANNING (Future)
         else {
-            const futureMonths = data.meta.futureMonthsArray || [];
+            const futureMonths = data?.meta.futureMonthsArray || [];
             let totalPropongo = 0; // Salesperson Promise
             let totalMeta = 0;     // Company Target
 
@@ -229,11 +254,11 @@ export default function ObjetivosPage() {
 
             futureMonths.forEach(m => {
                 const key = `${m.ano}-${String(m.mes).padStart(2, '0')}`;
-                const allSellers = Object.keys((data as any).vendedores || {});
+                const allSellers = Object.keys(data?.vendedores || {});
 
                 allSellers.forEach(vendedor => {
-                    const prop = data.proyecciones[vendedor]?.[key] || 0;
-                    const obj = data.objetivos[vendedor]?.[key] || 0;
+                    const prop = data?.proyecciones[vendedor]?.[key] || 0;
+                    const obj = data?.objetivos[vendedor]?.[key] || 0;
 
                     totalPropongo += prop;
                     totalMeta += obj;
@@ -255,13 +280,28 @@ export default function ObjetivosPage() {
         }
     }, [data, pageMode]);
 
-    // --- Process Data for MarketShareChart ---
-    const EXTENDED_PALETTE = [
-        '#4f46e5', '#06b6d4', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#6366f1', '#14b8a6',
-        '#ef4444', '#f97316', '#84cc16', '#22c55e', '#0ea5e9', '#3b82f6', '#a855f7', '#d946ef',
-        '#f43f5e', '#64748b', '#78716c', '#0f766e', '#b45309', '#be185d', '#4338ca', '#1d4ed8'
-    ];
+    // Initialize Trend Chart Sellers
+    useEffect(() => {
+        if (data?.vendedores && !hasInitializedSellersTrend.current) {
+            const sellerCodes = Object.keys(data.vendedores).filter(code => data.vendedores![code] !== "Sin Asignar");
+            if (selectedVendedoresTrend.length === 0) {
+                setSelectedVendedoresTrend(sellerCodes);
+            }
+            hasInitializedSellersTrend.current = true;
+        }
+    }, [data, selectedVendedoresTrend.length]);
 
+    const toggleTrendSeller = (code: string) => {
+        setSelectedVendedoresTrend(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
+    };
+    const selectAllTrendSellers = () => {
+        if (data?.vendedores) {
+            setSelectedVendedoresTrend(Object.keys(data.vendedores).filter(code => data.vendedores![code] !== "Sin Asignar"));
+        }
+    };
+    const clearAllTrendSellers = () => setSelectedVendedoresTrend([]);
+
+    // --- Process Data for MarketShareChart ---
     const groupedData = useMemo(() => {
         if (!data || !data.ventasPorFamilia || !selectedSellerForFamily) {
             return { marketShare: [], allEntities: [], rawFamilies: [] };
@@ -548,7 +588,7 @@ export default function ObjetivosPage() {
                             ventas={data?.ventas || {}}
                             objetivos={data?.objetivos || {}}
                             proyecciones={data?.proyecciones || {}}
-                            vendedores={(data as any)?.vendedores}
+                            vendedores={data?.vendedores || {}}
                             onSave={handleSaveTarget}
                             loading={loading}
                             currentMonthKey={getCurrentMonth()}
@@ -556,37 +596,116 @@ export default function ObjetivosPage() {
                     )}
 
                     {/* Chart Container - Conditionally Hidden in Planning Mode */}
-                    {pageMode === "history" && (
+                    {pageMode === "history" && data && (
                         <>
                             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                                <div className="flex items-center gap-2 mb-6">
-                                    <TrendingUp className="h-5 w-5 text-indigo-500" />
-                                    <h2 className="text-lg font-bold text-slate-800">Tendencia por Vendedor (Real)</h2>
+                                <div className="flex items-center justify-between mb-6">
+                                    <div className="flex items-center gap-2">
+                                        <TrendingUp className="h-5 w-5 text-indigo-500" />
+                                        <h2 className="text-lg font-bold text-slate-800">Tendencia por Vendedor (Real)</h2>
+                                    </div>
+
+                                    {/* Seller Filter Popover */}
+                                    <div className="relative">
+                                        <button
+                                            onClick={() => setShowSellerFilter(!showSellerFilter)}
+                                            className={cn(
+                                                "p-2 rounded-lg transition-colors border",
+                                                showSellerFilter ? "bg-indigo-50 border-indigo-200 text-indigo-600" : "hover:bg-slate-50 border-slate-200 text-slate-500"
+                                            )}
+                                            title="Filtrar Vendedores"
+                                        >
+                                            <Filter className="h-5 w-5" />
+                                        </button>
+
+                                        {showSellerFilter && (
+                                            <>
+                                                <div className="fixed inset-0 z-40" onClick={() => setShowSellerFilter(false)} />
+                                                <div className="absolute top-full right-0 mt-2 w-72 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 p-4 animate-in fade-in zoom-in duration-200 origin-top-right">
+                                                    <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
+                                                        <span className="text-sm font-bold text-slate-900">Filtrar Vendedores</span>
+                                                        <button onClick={() => setShowSellerFilter(false)}><X className="h-4 w-4 text-slate-400" /></button>
+                                                    </div>
+                                                    <div className="flex gap-2 mb-3">
+                                                        <button onClick={selectAllTrendSellers} className="flex-1 text-[10px] font-bold py-1.5 bg-indigo-50 text-indigo-700 rounded-md hover:bg-indigo-100">Todos</button>
+                                                        <button onClick={clearAllTrendSellers} className="flex-1 text-[10px] font-bold py-1.5 bg-slate-50 text-slate-600 rounded-md hover:bg-slate-100">Ninguno</button>
+                                                    </div>
+                                                    <div className="px-1 mb-2">
+                                                        <div className="relative">
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Buscar vendedor..."
+                                                                value={sellerSearchTerm}
+                                                                onChange={(e) => setSellerSearchTerm(e.target.value)}
+                                                                className="w-full pl-7 pr-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-400"
+                                                            />
+                                                            <Filter className="absolute left-2 top-1.5 h-3.5 w-3.5 text-slate-400" />
+                                                        </div>
+                                                    </div>
+                                                    <div className="space-y-1 max-h-60 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-200">
+                                                        {Object.entries(data?.vendedores || {})
+                                                            .filter(([_, name]) => name !== "Sin Asignar" && name.toLowerCase().includes(sellerSearchTerm.toLowerCase()))
+                                                            .map(([code, name], idx) => {
+                                                                const isSelected = selectedVendedoresTrend.includes(code);
+                                                                return (
+                                                                    <label key={code} className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded-lg cursor-pointer">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={isSelected}
+                                                                            onChange={() => toggleTrendSeller(code)}
+                                                                            className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                                                        />
+                                                                        <div
+                                                                            className="w-2 h-2 rounded-full flex-shrink-0"
+                                                                            style={{ backgroundColor: EXTENDED_PALETTE[Object.keys(data?.vendedores || {}).indexOf(code) % EXTENDED_PALETTE.length] }}
+                                                                        />
+                                                                        <span className={cn("text-xs transition-colors", isSelected ? "text-slate-900 font-medium" : "text-slate-500")}>
+                                                                            {name}
+                                                                        </span>
+                                                                    </label>
+                                                                );
+                                                            })}
+                                                    </div>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
+
                                 <div className="h-[400px]">
                                     <VendedoresChart
                                         data={data?.ventas || {}}
                                         objetivos={data?.objetivos || {}}
                                         proyecciones={data?.proyecciones || {}}
-                                        vendedores={(data as any)?.vendedores}
+                                        vendedores={data?.vendedores || {}}
                                         view="Real"
                                         anio={data?.meta?.anoActual || new Date().getFullYear()}
                                         loading={loading}
                                         monthsArray={data?.meta?.monthsArray}
+                                        selectedVendedores={selectedVendedoresTrend}
                                     />
                                 </div>
                             </div>
 
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 <MarketShareVendedoresChart
-                                    data={data?.ranking}
+                                    data={data?.ranking.filter(r => {
+                                        // Find code for this name
+                                        const code = Object.entries(data?.vendedores || {}).find(([_, name]) => name === r.name)?.[0];
+                                        return code && selectedVendedoresTrend.includes(code);
+                                    })}
                                     loading={loading}
                                     colors={EXTENDED_PALETTE}
+                                    allSellers={data?.vendedores || {}}
                                 />
                                 <RankingVendedoresChart
-                                    data={data?.ranking}
+                                    data={data?.ranking.filter(r => {
+                                        const code = Object.entries(data?.vendedores || {}).find(([_, name]) => name === r.name)?.[0];
+                                        return code && selectedVendedoresTrend.includes(code);
+                                    })}
                                     loading={loading}
                                     colors={EXTENDED_PALETTE}
+                                    allSellers={data?.vendedores || {}}
                                 />
                             </div>
 
@@ -716,7 +835,7 @@ export default function ObjetivosPage() {
                                 data={data.ventas}
                                 objetivos={data.objetivos}
                                 proyecciones={data.proyecciones}
-                                vendedores={(data as any)?.vendedores}
+                                vendedores={data?.vendedores || {}}
                                 view={pageMode === "history" ? "Real" : tableDetailView}
                                 onSave={handleSaveTarget}
                                 monthsArray={

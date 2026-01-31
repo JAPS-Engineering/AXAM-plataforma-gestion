@@ -6,9 +6,10 @@ interface MarketShareVendedoresChartProps {
     data: { name: string; value: number; percentage: string }[] | undefined;
     loading: boolean;
     colors: string[];
+    allSellers?: Record<string, string>;
 }
 
-export function MarketShareVendedoresChart({ data, loading, colors }: MarketShareVendedoresChartProps) {
+export function MarketShareVendedoresChart({ data, loading, colors, allSellers }: MarketShareVendedoresChartProps) {
     if (loading) {
         return (
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm h-[400px] flex items-center justify-center">
@@ -19,6 +20,19 @@ export function MarketShareVendedoresChart({ data, loading, colors }: MarketShar
 
     const hasData = data && data.length > 0;
     const totalVentas = data?.reduce((acc, curr) => acc + curr.value, 0) || 0;
+
+    // Helper to get color based on global seller index
+    const getSellerColor = (name: string, index: number) => {
+        if (allSellers) {
+            const sellerCodes = Object.keys(allSellers);
+            const code = Object.entries(allSellers).find(([_, n]) => n === name)?.[0];
+            if (code) {
+                const globalIdx = sellerCodes.indexOf(code);
+                return colors[globalIdx % colors.length];
+            }
+        }
+        return colors[index % colors.length];
+    };
 
     return (
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm relative">
@@ -42,8 +56,8 @@ export function MarketShareVendedoresChart({ data, loading, colors }: MarketShar
                                         paddingAngle={2}
                                         dataKey="value"
                                     >
-                                        {data.map((_, index) => (
-                                            <Cell key={`cell-${index}`} fill={colors[index % colors.length]} stroke="none" />
+                                        {data.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={getSellerColor(entry.name, index)} stroke="none" />
                                         ))}
                                     </Pie>
                                     <Tooltip
@@ -56,7 +70,7 @@ export function MarketShareVendedoresChart({ data, loading, colors }: MarketShar
                             {/* Centered Total */}
                             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                                 <div className="text-center">
-                                    <span className="text-[10px] text-slate-400 block">Total</span>
+                                    <span className="text-[10px] text-slate-400 block">Total Visible</span>
                                     <span className="text-sm font-bold text-slate-800 block">{formatTooltipCLP(totalVentas)}</span>
                                 </div>
                             </div>
@@ -74,7 +88,7 @@ export function MarketShareVendedoresChart({ data, loading, colors }: MarketShar
                         <div className="w-full">
                             <div className="grid grid-cols-2 gap-x-6 gap-y-2 max-h-[300px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-indigo-200 scrollbar-track-translate hover:scrollbar-thumb-indigo-300">
                                 {data.map((entry, index) => {
-                                    const fill = colors[index % colors.length];
+                                    const fill = getSellerColor(entry.name, index);
                                     return (
                                         <div key={index} className="flex items-center gap-3 w-full group hover:bg-slate-50 p-1.5 rounded-lg transition-colors cursor-default min-w-0">
                                             <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: fill }}></div>
