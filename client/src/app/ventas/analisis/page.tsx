@@ -33,6 +33,12 @@ const formatCLP = (amount: number) => {
     }).format(amount);
 };
 
+const getMonthDifference = (start: string, end: string) => {
+    const [sY, sM] = start.split('-').map(Number);
+    const [eY, eM] = end.split('-').map(Number);
+    return (eY - sY) * 12 + (eM - sM) + 1;
+};
+
 const getCurrentMonth = () => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -44,7 +50,6 @@ const getPastMonth = (monthsAgo: number) => {
 };
 
 export default function AnalisisVentasPage() {
-    // Filtros state
     // Filtros state
     const [marca, setMarca] = useState("");
 
@@ -60,6 +65,12 @@ export default function AnalisisVentasPage() {
 
     const [salesStatus, setSalesStatus] = useState<'all' | 'with_sales' | 'without_sales'>('with_sales');
 
+    // Computed effective months for KPIs and averages
+    const effectiveMeses = useMemo(() => {
+        if (periodMode === "preset") return meses;
+        return getMonthDifference(customRange.start, customRange.end);
+    }, [periodMode, meses, customRange]);
+
     // Sorting state
     const [sortConfig, setSortConfig] = useState<{ key: string; direction: "asc" | "desc" } | null>({ key: "total", direction: "desc" });
 
@@ -68,7 +79,6 @@ export default function AnalisisVentasPage() {
     const [pageSize, setPageSize] = useState(10);
 
     // Data fetching
-    // Params computados para la API
     const apiParams = useMemo(() => {
         if (periodMode === "preset") {
             return { meses, marca };
@@ -83,8 +93,8 @@ export default function AnalisisVentasPage() {
     });
 
     // Filtrado local y Ranking
-    const { productosFiltered, rankingData } = useMemo(() => {
-        if (!data?.productos) return { productosFiltered: [], rankingData: [] };
+    const { productosFiltered, absoluteTopSKU } = useMemo(() => {
+        if (!data?.productos) return { productosFiltered: [], absoluteTopSKU: "N/A" };
 
         let result = data.productos;
 
@@ -106,12 +116,14 @@ export default function AnalisisVentasPage() {
             result = result.filter((p) => (p.totalMonto || 0) === 0);
         }
 
-        // Calcular métricas adicionales (ABC, Tendencia, Cobertura)
+        // 1. Calculate TOP SKU from the filtered list BEFORE sorting by table column
+        const sortedByMonto = [...result].sort((a, b) => b.totalMonto - a.totalMonto);
+        const topSKU = sortedByMonto[0]?.producto.sku || "N/A";
+
+        // 1.1 Calcular métricas adicionales (ABC, Tendencia, Cobertura)
         const grandTotal = result.reduce((sum, item) => sum + item.totalMonto, 0);
 
-        // 1. Sort by Total Descending for ABC calculation (must be done on the full result set first)
-        // actually we should do this on the filtered result before final sort.
-        // Let's create a temporary array for ABC calculation
+        // Sort by Total Descending for ABC calculation (must be done on the full result set first)
         const abcSorted = [...result].sort((a, b) => b.totalMonto - a.totalMonto);
         let accumulated = 0;
         const abcMap = new Map<number, "A" | "B" | "C">();
@@ -125,17 +137,13 @@ export default function AnalisisVentasPage() {
         });
 
         // 2. Enhance items with new metrics
-        let enrichedResult = result.map((item, index) => {
-            // Trend: Last Month vs Average
-            // Assuming ventasMeses is ordered chronologically (oldest -> newest), last element is most recent
+        let enrichedResult = result.map((item) => {
             const lastMonthSale = item.ventasMeses[item.ventasMeses.length - 1]?.montoNeto || 0;
             const avgSale = item.promedioMonto || 0;
             const trend = avgSale > 0 ? ((lastMonthSale - avgSale) / avgSale) * 100 : 0;
 
-            // Coverage: Stock / Average Units
-            // Calculate Average Units
             const totalUnits = item.ventasMeses.reduce((sum, m) => sum + (m.cantidad || 0), 0);
-            const avgUnits = meses > 0 ? totalUnits / meses : 0;
+            const avgUnits = effectiveMeses > 0 ? totalUnits / effectiveMeses : 0;
             const currentStock = item.mesActual?.stockActual || 0;
             const coverage = avgUnits > 0 ? currentStock / avgUnits : 0;
 
@@ -176,8 +184,6 @@ export default function AnalisisVentasPage() {
                         bValue = b.promedioMonto;
                         break;
                     case "abc":
-                        // A < B < C for string compare, but we want A to be "highest" rank usually?
-                        // If Asc: A -> B -> C. If Desc: C -> B -> A.
                         aValue = a.abcClass;
                         bValue = b.abcClass;
                         break;
@@ -198,7 +204,6 @@ export default function AnalisisVentasPage() {
                 return 0;
             });
         } else {
-            // Default Sort: Total Desc
             enrichedResult.sort((a, b) => b.totalMonto - a.totalMonto);
         }
 
@@ -210,17 +215,17 @@ export default function AnalisisVentasPage() {
 
         return {
             productosFiltered: finalResult,
-            rankingData: finalResult
+            absoluteTopSKU: topSKU
         };
-    }, [data?.productos, busqueda, salesStatus, sortConfig, meses]);
+    }, [data?.productos, busqueda, salesStatus, sortConfig, effectiveMeses]);
 
     const handleSort = (key: string) => {
         setSortConfig((current) => {
             if (current?.key === key) {
                 if (current.direction === "asc") return { key, direction: "desc" };
-                return null; // Reset sorting if clicking same column twice in desc order
+                return null;
             }
-            return { key, direction: "asc" }; // Default to asc when clicking new column
+            return { key, direction: "asc" };
         });
     };
 
@@ -248,18 +253,17 @@ export default function AnalisisVentasPage() {
 
     // KPIs calculados
     const kpis = useMemo(() => {
-        if (!data?.meta) return { totalVentas: 0, promedioPeriodo: 0, topProducto: "N/A" };
+        if (!data?.meta) return { totalVentas: 0, promedioPeriodo: 0, topProducto: "N/A", productosConVentas: 0 };
 
         const grandTotal = productosFiltered.reduce((sum, item) => sum + item.totalMonto, 0);
 
         return {
             totalVentas: grandTotal,
-            promedioPeriodo: grandTotal / meses,
-            topProducto: productosFiltered[0]?.producto.sku || "N/A",
-            // Calc active products locally since meta.totalProductos is now the Universe size
-            productosConVentas: data.productos.filter(p => p.totalMonto > 0).length
+            promedioPeriodo: effectiveMeses > 0 ? grandTotal / effectiveMeses : 0,
+            topProducto: absoluteTopSKU,
+            productosConVentas: productosFiltered.filter(p => p.totalMonto > 0).length
         };
-    }, [data, productosFiltered, meses]);
+    }, [data, productosFiltered, effectiveMeses, absoluteTopSKU]);
 
     return (
         <div className="flex h-screen bg-slate-100">
@@ -338,7 +342,7 @@ export default function AnalisisVentasPage() {
                     {/* KPI Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                         <KPICard
-                            title={`Ventas Totales (${meses} meses)`}
+                            title={`Ventas Totales (${effectiveMeses} meses)`}
                             value={formatCLP(kpis.totalVentas)}
                             icon={DollarSign}
                         />
@@ -353,7 +357,7 @@ export default function AnalisisVentasPage() {
                             icon={Package}
                         />
                         <KPICard
-                            title="Top SKU (Ingresos)"
+                            title={`Top SKU Período (${effectiveMeses}m)`}
                             value={kpis.topProducto}
                             icon={TrendingUp}
                         />
@@ -363,8 +367,7 @@ export default function AnalisisVentasPage() {
                     <FiltersBar
                         marca={marca}
                         onMarcaChange={handleFilterChange(setMarca)}
-                        // Meses controlled by header
-                        meses={meses}
+                        meses={effectiveMeses}
                         onMesesChange={() => { }}
                         hidePeriodSelector={true}
                         busqueda={busqueda}

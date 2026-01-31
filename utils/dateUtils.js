@@ -43,22 +43,33 @@ function parseDateParams(query) {
 
     // Caso 1: Rango Personalizado
     if (start && end) {
-        const startDate = parseISO(`${start}-01`); // YYYY-MM-01
-        const endDate = parseISO(`${end}-01`);
+        // Robust parsing: split YYYY-MM and ensure valid numbers
+        const partsStart = start.split('-');
+        const partsEnd = end.split('-');
 
-        const startYear = getYear(startDate);
-        const startMonth = getMonth(startDate) + 1;
+        const startYear = parseInt(partsStart[0], 10);
+        const startMonth = parseInt(partsStart[1], 10);
+        const endYear = parseInt(partsEnd[0], 10);
+        const endMonth = parseInt(partsEnd[1], 10);
 
-        const endYear = getYear(endDate);
-        const endMonth = getMonth(endDate) + 1;
+        // Fallback to current month if parsing fails
+        const sY = isNaN(startYear) ? mesActual.ano : startYear;
+        const sM = isNaN(startMonth) ? mesActual.mes : startMonth;
+        const eY = isNaN(endYear) ? mesActual.ano : endYear;
+        const eM = isNaN(endMonth) ? mesActual.mes : endMonth;
+
+        const startDate = new Date(sY, sM - 1, 1);
+        const endDate = new Date(eY, eM - 1, 1);
 
         const monthsCount = differenceInMonths(addMonths(endDate, 1), startDate);
-        const monthsArray = generateMonthsRangeArray(startYear, startMonth, endYear, endMonth);
+        const monthsArray = generateMonthsRangeArray(sY, sM, eY, eM);
 
         return {
-            startYear, startMonth,
-            endYear, endMonth,
-            monthsCount: monthsCount > 0 ? monthsCount : 1, // Evitar div by zero
+            startYear: sY,
+            startMonth: sM,
+            endYear: eY,
+            endMonth: eM,
+            monthsCount: monthsCount > 0 ? monthsCount : 1,
             monthsArray,
             isCustom: true
         };

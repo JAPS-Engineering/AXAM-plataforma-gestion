@@ -62,12 +62,15 @@ export default function VendedoresChart({ data, objetivos, proyecciones, view, a
 
         return effectiveMonths.map((m) => {
             const entry: any = { name: m.label };
-            const key = `${m.ano}-${m.mes}`;
+            const key = `${m.ano}-${String(m.mes).padStart(2, '0')}`;
             // Also try just month number for backward compatibility during transitions
             const altKey = m.mes.toString();
+            const altKeyLegacy = `${m.ano}-${m.mes}`; // Extra fallback
 
             topVendedores.forEach(vendedor => {
-                entry[vendedor] = currentDataSource[vendedor]?.[key] ?? currentDataSource[vendedor]?.[altKey] ?? 0;
+                entry[vendedor] = currentDataSource[vendedor]?.[key] ??
+                    currentDataSource[vendedor]?.[altKey] ??
+                    currentDataSource[vendedor]?.[altKeyLegacy] ?? 0;
             });
 
             return entry;

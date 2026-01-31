@@ -82,8 +82,8 @@ export function MarketShareVendedoresChart({ data, loading, colors }: MarketShar
                                                 <span className="text-xs truncate w-full text-slate-600 group-hover:text-slate-900" title={entry.name}>
                                                     {entry.name}
                                                 </span>
-                                                <span className="text-[10px] text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity truncate">
-                                                    {formatTooltipCLP(entry.value)} ({entry.percentage})
+                                                <span className="text-[10px] text-slate-400 truncate">
+                                                    {`${formatTooltipCLP(entry.value)} (${entry.percentage || '0%'})`}
                                                 </span>
                                             </div>
                                         </div>

@@ -2,24 +2,25 @@
 
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { Sidebar } from "@/components/sidebar";
-import { RefreshCw, TrendingUp, Target, DollarSign, Wallet, Calendar as CalendarIcon, ChevronLeft, Info } from "lucide-react";
+import { RefreshCw, TrendingUp, Target, DollarSign, Wallet, Calendar as CalendarIcon, ChevronLeft, Info, PieChart as PieChartIcon } from "lucide-react";
 import Link from "next/link";
 import VendedoresChart from "@/components/ventas/VendedoresChart";
 import VendedoresTable from "@/components/ventas/VendedoresTable";
 import { MarketShareVendedoresChart } from "@/components/ventas/MarketShareVendedoresChart";
 import { RankingVendedoresChart } from "@/components/ventas/RankingVendedoresChart";
+import { MarketShareChart } from "@/components/ventas/MarketShareChart";
 import { ResumenMesActualTable } from "@/components/ventas/ResumenMesActualTable";
 import { cn } from "@/lib/utils";
 
 // Helpers for dates (Backend uses unpadded months e.g. "2024-1")
 const getCurrentMonth = () => {
     const d = new Date();
-    return `${d.getFullYear()}-${d.getMonth() + 1}`;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 const getPastMonth = (monthsAgo: number) => {
     const d = new Date();
     d.setMonth(d.getMonth() - monthsAgo);
-    return `${d.getFullYear()}-${d.getMonth() + 1}`;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 
 interface VendedorMesData {
@@ -33,6 +34,8 @@ interface SalesData {
     objetivos: Record<string, Record<string, number>>;
     proyecciones: Record<string, Record<string, number>>;
     ranking: { name: string; value: number; percentage: string }[];
+    ventasPorFamilia?: Record<string, Record<string, number>>; // New: Seller -> Family -> Total
+    vendedores?: Record<string, string>; // Code -> Name
     meta: {
         monthsArray: VendedorMesData[]; // Historic
         futureMonthsArray?: VendedorMesData[]; // Future (Planning)
@@ -49,6 +52,33 @@ export default function ObjetivosPage() {
     const [currentView, setCurrentView] = useState<"Real" | "Objetivo" | "Propongo">("Real");
     const [tableDetailView, setTableDetailView] = useState<"Real" | "Objetivo" | "Propongo">("Real");
     const [selectedSummaryMonth, setSelectedSummaryMonth] = useState<string>(getCurrentMonth());
+    const [selectedSellerForFamily, setSelectedSellerForFamily] = useState<string>("");
+
+    // --- State for Advanced Chart (Groups & Filters) ---
+    interface FamilyGroup {
+        id: string;
+        name: string;
+        families: string[];
+        color: string;
+    }
+    const [familyGroups, setFamilyGroups] = useState<FamilyGroup[]>([]);
+    const [selectedFamilies, setSelectedFamilies] = useState<string[]>([]);
+    const hasInitializedFamilies = React.useRef(false);
+
+    // Load groups from localStorage
+    useEffect(() => {
+        const saved = localStorage.getItem("familyGroups_Objetivos");
+        if (saved) {
+            try { setFamilyGroups(JSON.parse(saved)); } catch (e) { console.error(e); }
+        }
+    }, []);
+
+    // Save groups
+    useEffect(() => {
+        if (familyGroups.length > 0) {
+            localStorage.setItem("familyGroups_Objetivos", JSON.stringify(familyGroups));
+        }
+    }, [familyGroups]);
 
     // Period State
     const [periodMode, setPeriodMode] = useState<"preset" | "custom">("preset");
@@ -80,11 +110,12 @@ export default function ObjetivosPage() {
             const res = await fetch(url);
             if (!res.ok) throw new Error("Error al cargar datos desde el servidor");
             const jsonData = await res.json();
+
             setData(jsonData);
             // Default select the latest month available
             if (jsonData.meta?.monthsArray?.length > 0) {
                 const latest = jsonData.meta.monthsArray[jsonData.meta.monthsArray.length - 1];
-                setSelectedSummaryMonth(`${latest.ano}-${latest.mes}`);
+                setSelectedSummaryMonth(`${latest.ano}-${String(latest.mes).padStart(2, '0')}`);
             }
             setError(null);
         } catch (err: any) {
@@ -146,34 +177,42 @@ export default function ObjetivosPage() {
         // MODE 1: HISTORICAL REVIEW (Selective Compliance)
         if (pageMode === "history") {
             const historicMonths = data.meta.monthsArray || [];
-            let totalReal = 0;      // Total sales in period (unfiltered)
-            let totalObjetivo = 0;  // Total objectives in period
 
-            // For Compliance %: Only count where Objective > 0
-            let complianceSales = 0;
-            let complianceTarget = 0;
+            let totalRealPeriodo = 0; // Total sales in filtered period
 
+            // 1. Calculate Period Total (Filtered)
             historicMonths.forEach(m => {
-                const key = `${m.ano}-${m.mes}`;
+                const key = `${m.ano}-${String(m.mes).padStart(2, '0')}`;
                 Object.keys(data.ventas).forEach(vendedor => {
-                    const venta = data.ventas[vendedor]?.[key] || 0;
-                    const objetivo = data.objetivos[vendedor]?.[key] || 0;
-
-                    totalReal += venta;
-                    totalObjetivo += objetivo;
-
-                    if (objetivo > 0) {
-                        complianceSales += venta;
-                        complianceTarget += objetivo;
-                    }
+                    totalRealPeriodo += data.ventas[vendedor]?.[key] || 0;
                 });
             });
 
-            const cumplimiento = complianceTarget > 0 ? (complianceSales / complianceTarget) * 100 : 0;
+            // 2. Calculate Current Month KPIs (Try meta first, then fallback)
+            let currentMonthSales = 0;
+            let currentMonthTarget = 0;
+
+            if ((data.meta as any).currentMonthStats) {
+                currentMonthSales = (data.meta as any).currentMonthStats.sales;
+                currentMonthTarget = (data.meta as any).currentMonthStats.target;
+            } else {
+                // Fallback for older API versions or missing meta
+                const currentMonthKey = getCurrentMonth();
+                Object.keys(data.ventas).forEach(vendedor => {
+                    const venta = data.ventas[vendedor]?.[currentMonthKey] || 0;
+                    const objetivo = data.objetivos[vendedor]?.[currentMonthKey] || 0;
+                    if (objetivo > 0) {
+                        currentMonthSales += venta;
+                        currentMonthTarget += objetivo;
+                    }
+                });
+            }
+
+            const cumplimiento = currentMonthTarget > 0 ? (currentMonthSales / currentMonthTarget) * 100 : 0;
 
             return {
-                kpi1: { label: 'Venta Real (Periodo)', value: totalReal },
-                kpi2: { label: 'Objetivos (Mes Actual)', value: totalObjetivo },
+                kpi1: { label: 'Venta Real (Periodo)', value: totalRealPeriodo },
+                kpi2: { label: 'Objetivos (Mes Actual)', value: currentMonthTarget },
                 kpi3: { label: 'Cumplimiento (Mes Actual)', value: cumplimiento }
             };
         }
@@ -189,7 +228,7 @@ export default function ObjetivosPage() {
             let coverageTarget = 0;
 
             futureMonths.forEach(m => {
-                const key = `${m.ano}-${m.mes}`;
+                const key = `${m.ano}-${String(m.mes).padStart(2, '0')}`;
                 const allSellers = Object.keys((data as any).vendedores || {});
 
                 allSellers.forEach(vendedor => {
@@ -209,21 +248,115 @@ export default function ObjetivosPage() {
             const cobertura = coverageTarget > 0 ? (coveragePropongo / coverageTarget) * 100 : 0;
 
             return {
-                kpi1: { label: 'Proyección (Propuestas)', value: totalPropongo },
+                kpi1: { label: 'Planificación (Propuestas)', value: totalPropongo },
                 kpi2: { label: 'Meta Global (Objetivos)', value: totalMeta },
                 kpi3: { label: 'Cobertura del Plan', value: cobertura }
             };
         }
     }, [data, pageMode]);
 
+    // --- Process Data for MarketShareChart ---
+    const EXTENDED_PALETTE = [
+        '#4f46e5', '#06b6d4', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#6366f1', '#14b8a6',
+        '#ef4444', '#f97316', '#84cc16', '#22c55e', '#0ea5e9', '#3b82f6', '#a855f7', '#d946ef',
+        '#f43f5e', '#64748b', '#78716c', '#0f766e', '#b45309', '#be185d', '#4338ca', '#1d4ed8'
+    ];
+
+    const groupedData = useMemo(() => {
+        if (!data || !data.ventasPorFamilia || !selectedSellerForFamily) {
+            return { marketShare: [], allEntities: [], rawFamilies: [] };
+        }
+
+        const rawSales = data.ventasPorFamilia[selectedSellerForFamily] || {};
+        // Convert to array
+        const marketShareRaw = Object.entries(rawSales).map(([name, value]) => ({ name, value }));
+
+        // 1. Identify grouped families
+        const groupedFamilyNames = new Set<string>();
+        familyGroups.forEach(g => g.families.forEach(f => groupedFamilyNames.add(f)));
+
+        // 2. Separate loose vs grouped
+        const looseItems = marketShareRaw.filter(m => !groupedFamilyNames.has(m.name));
+
+        // 3. Calculate groups
+        const totalVenta = marketShareRaw.reduce((acc, curr) => acc + curr.value, 0) || 0;
+
+        const groupItems = familyGroups.map(g => {
+            const value = marketShareRaw
+                .filter(m => g.families.includes(m.name))
+                .reduce((acc, curr) => acc + curr.value, 0);
+
+            return {
+                name: g.name,
+                value,
+                percentage: totalVenta > 0 ? ((value / totalVenta) * 100).toFixed(1) + '%' : '0%',
+                isGroup: true,
+                color: g.color,
+                families: g.families
+            };
+        }).filter(g => g.value > 0);
+
+        // 4. Combine
+        const looseItemsWithPct = looseItems.map(item => ({
+            ...item,
+            percentage: totalVenta > 0 ? ((item.value / totalVenta) * 100).toFixed(1) + '%' : '0%'
+        }));
+
+        const combined = [...looseItemsWithPct, ...groupItems].sort((a, b) => b.value - a.value);
+
+        return {
+            marketShare: combined,
+            imageOfRaw: marketShareRaw, // For smart select
+            allEntities: combined.map(m => m.name),
+            rawFamilies: marketShareRaw.map(m => m.name).sort()
+        };
+    }, [data, selectedSellerForFamily, familyGroups]);
+
+    // Sync Selection
+    useEffect(() => {
+        if (groupedData.allEntities.length > 0) {
+            if (!hasInitializedFamilies.current) {
+                setSelectedFamilies(groupedData.allEntities);
+                hasInitializedFamilies.current = true;
+            } else {
+                // If new groups appear (created by user), select them automatically
+                setSelectedFamilies(prev => {
+                    const currentSet = new Set(prev);
+                    const newSelection = [...prev];
+                    let changed = false;
+                    groupedData.allEntities.forEach(entity => {
+                        const isGroup = familyGroups.some(g => g.name === entity);
+                        if (isGroup && !currentSet.has(entity)) {
+                            newSelection.push(entity);
+                            changed = true;
+                        }
+                    });
+                    return changed ? newSelection : prev;
+                });
+            }
+        }
+    }, [groupedData.allEntities, familyGroups]);
+
+    const toggleEntity = (entity: string) => {
+        setSelectedFamilies(prev => prev.includes(entity) ? prev.filter(e => e !== entity) : [...prev, entity]);
+    };
+    const selectAllEntities = () => setSelectedFamilies(groupedData.allEntities);
+    const clearAllEntities = () => setSelectedFamilies([]);
+    const handleUpdateGroups = (groups: FamilyGroup[]) => setFamilyGroups(groups);
+
+    // Set default selected seller
+    useEffect(() => {
+        if (data?.vendedores && !selectedSellerForFamily) {
+            const validSellers = Object.entries(data.vendedores).filter(([_, name]) => name !== "Sin Asignar");
+            if (validSellers.length > 0) setSelectedSellerForFamily(validSellers[0][0]);
+        }
+    }, [data, selectedSellerForFamily]);
+
 
     const formatCLP = (val: number) =>
         new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(val);
 
-    const EXTENDED_PALETTE = [
-        '#4f46e5', '#06b6d4', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#6366f1', '#14b8a6',
-        '#ef4444', '#f97316', '#84cc16', '#22c55e', '#0ea5e9', '#3b82f6', '#a855f7', '#d946ef'
-    ];
+
 
     return (
         <div className="flex h-screen bg-slate-100 overflow-hidden text-slate-900">
@@ -272,7 +405,7 @@ export default function ObjetivosPage() {
                                     )}
                                 >
                                     <Target className="h-4 w-4" />
-                                    Proyección
+                                    Planificación
                                 </button>
                             </div>
 
@@ -389,9 +522,9 @@ export default function ObjetivosPage() {
                                     {pageMode === "planning" && (
                                         <div className="relative group cursor-help">
                                             <Info className="h-3.5 w-3.5 text-slate-400 hover:text-slate-600" />
-                                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-56 p-2 bg-slate-800 text-white text-xs rounded-lg shadow-lg z-50 text-center pointer-events-none">
-                                                Cálculo: Proyección (Propuestas) / Meta Global (Objetivos)
-                                                <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-800"></div>
+                                            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 hidden group-hover:block w-56 p-2 bg-slate-800 text-white text-xs rounded-lg shadow-lg z-50 text-center pointer-events-none">
+                                                Cálculo: Planificación (Propuestas) / Meta Global (Objetivos)
+                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent border-b-slate-800"></div>
                                             </div>
                                         </div>
                                     )}
@@ -456,6 +589,60 @@ export default function ObjetivosPage() {
                                     colors={EXTENDED_PALETTE}
                                 />
                             </div>
+
+                            {/* Family Analysis Section (MarketShareChart) */}
+                            <div className="flex justify-end mb-2">
+                                <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">
+                                    <span className="text-sm text-slate-500 font-medium">Vendedor:</span>
+                                    <select
+                                        value={selectedSellerForFamily}
+                                        onChange={(e) => {
+                                            setSelectedSellerForFamily(e.target.value);
+                                            // Reset selection on seller change to avoid stale state?
+                                            // Actually better to keep it if families are similar, but for safety:
+                                            hasInitializedFamilies.current = false;
+                                        }}
+                                        className="text-sm bg-transparent border-none focus:outline-none font-bold text-indigo-700 cursor-pointer min-w-[150px]"
+                                    >
+                                        {Object.entries(data?.vendedores || {})
+                                            .filter(([_, name]) => name !== "Sin Asignar")
+                                            .map(([code, name]) => (
+                                                <option key={code} value={code}>
+                                                    {name}
+                                                </option>
+                                            ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {groupedData.marketShare.length > 0 && groupedData.marketShare.reduce((a, b) => a + b.value, 0) > 0 ? (
+                                <MarketShareChart
+                                    data={groupedData.marketShare}
+                                    meta={{ anoActual: data?.meta?.anoActual || new Date().getFullYear(), totalVentaPeriodo: groupedData.marketShare.reduce((a, b) => a + b.value, 0) }}
+                                    allEntities={groupedData.allEntities}
+                                    selectedEntities={selectedFamilies}
+                                    onToggleEntity={toggleEntity}
+                                    onSelectAll={selectAllEntities}
+                                    onClearAll={clearAllEntities}
+                                    loading={loading}
+                                    familyGroups={familyGroups}
+                                    rawFamilies={groupedData.rawFamilies}
+                                    onUpdateGroups={handleUpdateGroups}
+                                    colors={EXTENDED_PALETTE}
+                                    title={`Mix de Ventas - ${data?.vendedores?.[selectedSellerForFamily] || selectedSellerForFamily}`}
+                                    subtitle="Distribución por Familia y Grupos"
+                                />
+                            ) : (
+                                <div className="bg-white p-12 rounded-xl border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center">
+                                    <div className="bg-slate-50 p-4 rounded-full mb-4">
+                                        <PieChartIcon className="h-8 w-8 text-slate-400" />
+                                    </div>
+                                    <h3 className="text-lg font-medium text-slate-900 mb-1">Sin datos de ventas</h3>
+                                    <p className="text-slate-500 max-w-sm">
+                                        El vendedor seleccionado no registra ventas para el periodo y filtros actuales.
+                                    </p>
+                                </div>
+                            )}
                         </>
                     )}
 

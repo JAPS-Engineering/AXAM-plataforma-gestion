@@ -25,6 +25,8 @@ interface MarketShareChartProps {
     onUpdateGroups: (groups: FamilyGroup[]) => void;
     colors: string[];
     marketShareRaw?: MarketShareRow[];
+    title?: string;
+    subtitle?: string;
 }
 
 type ModalTab = "manage" | "create";
@@ -42,7 +44,9 @@ export function MarketShareChart({
     rawFamilies,
     onUpdateGroups,
     colors,
-    marketShareRaw
+    marketShareRaw,
+    title = "Market Share Interno",
+    subtitle
 }: MarketShareChartProps) {
     const [showFilterDropdown, setShowFilterDropdown] = useState(false);
     const [showGroupModal, setShowGroupModal] = useState(false);
@@ -209,9 +213,9 @@ export function MarketShareChart({
                 <div>
                     <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                         <PieIcon className="h-5 w-5 text-indigo-500" />
-                        Market Share Interno
+                        {title}
                     </h3>
-                    <p className="text-xs text-slate-500">Participación por Familia ({meta?.anoActual})</p>
+                    <p className="text-xs text-slate-500">{subtitle || `Participación por Familia (${meta?.anoActual})`}</p>
                 </div>
 
                 <div className="flex items-center gap-2 relative z-10">
@@ -277,50 +281,68 @@ export function MarketShareChart({
                 </div>
             </div>
 
-            <div className="flex flex-col md:flex-row items-center justify-center p-4">
-                <div className="h-[300px] w-[300px] flex-shrink-0 relative">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                            <Pie
-                                data={filteredMarketShare}
-                                cx="50%"
-                                cy="50%"
-                                innerRadius={80}
-                                outerRadius={120}
-                                paddingAngle={2}
-                                dataKey="value"
-                            >
-                                {filteredMarketShare.map((entry, index) => {
-                                    const fill = entry.color || colors[allEntities.indexOf(entry.name) % colors.length];
-                                    return <Cell key={`cell-${index}`} fill={fill} stroke="none" />;
-                                })}
-                            </Pie>
-                            <Tooltip formatter={(value: any) => formatTooltipCLP(Number(value))} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
-                        </PieChart>
-                    </ResponsiveContainer>
-
-                    {/* Centered Total */}
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="text-center">
-                            <span className="text-[10px] text-slate-400 block">Total Visible</span>
-                            <span className="text-sm font-bold text-slate-800 block">{formatTooltipCLP(totalFiltrado)}</span>
+            {totalFiltrado === 0 ? (
+                <div className="flex flex-col items-center justify-center p-8 h-[300px] text-center">
+                    <div className="bg-slate-50 p-4 rounded-full mb-3">
+                        <PieIcon className="h-8 w-8 text-slate-300" />
+                    </div>
+                    <h4 className="text-sm font-bold text-slate-700">Sin Datos de Ventas</h4>
+                    <p className="text-xs text-slate-500 max-w-[200px] mt-1">
+                        No hay registros de ventas para la selección actual en este período.
+                    </p>
+                </div>
+            ) : (
+                <div className="flex flex-col md:flex-row items-center justify-center p-4">
+                    <div className="h-[300px] w-[300px] flex-shrink-0 relative">
+                        {/* Centered Total - Moved behind chart for z-index safety */}
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div className="text-center">
+                                <span className="text-[10px] text-slate-400 block">Total Visible</span>
+                                <span className="text-sm font-bold text-slate-800 block">{formatTooltipCLP(totalFiltrado)}</span>
+                            </div>
                         </div>
+
+                        <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                                <Pie
+                                    data={filteredMarketShare}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={80}
+                                    outerRadius={120}
+                                    paddingAngle={2}
+                                    dataKey="value"
+                                >
+                                    {filteredMarketShare.map((entry, index) => {
+                                        const fill = entry.color || colors[allEntities.indexOf(entry.name) % colors.length];
+                                        return <Cell key={`cell-${index}`} fill={fill} stroke="none" />;
+                                    })}
+                                </Pie>
+                                <Tooltip
+                                    formatter={(value: any) => formatTooltipCLP(Number(value))}
+                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                                    wrapperStyle={{ zIndex: 1000 }}
+                                />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    </div>
+
+                    {/* Side Legend */}
+                    <div className="flex-1 min-w-[200px] pl-0 md:pl-8 mt-6 md:mt-0 border-l border-transparent md:border-slate-100">
+                        <CustomLegend
+                            data={filteredMarketShare}
+                            allEntities={allEntities}
+                            colors={colors}
+                        />
                     </div>
                 </div>
+            )}
 
-                {/* Side Legend */}
-                <div className="flex-1 min-w-[200px] pl-0 md:pl-8 mt-6 md:mt-0 border-l border-transparent md:border-slate-100">
-                    <CustomLegend
-                        data={filteredMarketShare}
-                        allEntities={allEntities}
-                        colors={colors}
-                    />
+            {totalFiltrado > 0 && (
+                <div className="mt-2 text-center text-[10px] text-slate-400">
+                    Total Período: {formatTooltipCLP(totalVentas)}
                 </div>
-            </div>
-
-            <div className="mt-2 text-center text-[10px] text-slate-400">
-                Total Período: {formatTooltipCLP(totalVentas)}
-            </div>
+            )}
 
             {/* --- MODAL DE GRUPOS MODERNIZADO --- */}
             {showGroupModal && (
@@ -560,8 +582,8 @@ function CustomLegend({ data, allEntities, colors }: { data: (MarketShareRow & {
                                 <span className={`text-xs truncate w-full ${entry.isGroup ? 'font-bold text-slate-800' : 'text-slate-600 group-hover:text-slate-900'}`} title={entry.name}>
                                     {entry.name}
                                 </span>
-                                <span className="text-[10px] text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity truncate">
-                                    {formatTooltipCLP(entry.value)}
+                                <span className="text-[10px] text-slate-400 truncate">
+                                    {`${formatTooltipCLP(entry.value)} (${entry.percentage || '0%'})`}
                                 </span>
                             </div>
                         </div>

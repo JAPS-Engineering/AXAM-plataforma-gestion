@@ -126,9 +126,14 @@ export function ResumenMesActualTable({
         ]));
 
         let rows = allVendedores.map(vendedor => {
-            const ventaReal = ventas[vendedor]?.[currentMonthKey] || 0;
-            const objetivo = objetivos[vendedor]?.[currentMonthKey] || 0;
-            const propongo = proyecciones[vendedor]?.[currentMonthKey] || 0;
+            // Robust key lookup: handle both "YYYY-MM" and "YYYY-M"
+            const [y, m] = currentMonthKey.split('-');
+            const unpaddedKey = `${y}-${parseInt(m)}`;
+
+            const ventaReal = ventas[vendedor]?.[currentMonthKey] ?? ventas[vendedor]?.[unpaddedKey] ?? 0;
+            const objetivo = objetivos[vendedor]?.[currentMonthKey] ?? objetivos[vendedor]?.[unpaddedKey] ?? 0;
+            const propongo = proyecciones[vendedor]?.[currentMonthKey] ?? proyecciones[vendedor]?.[unpaddedKey] ?? 0;
+
             const cumplimiento = objetivo > 0 ? (ventaReal / objetivo) * 100 : 0;
             const vendedorName = vendedores[vendedor] || vendedor;
 

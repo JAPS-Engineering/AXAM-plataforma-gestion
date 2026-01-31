@@ -129,8 +129,9 @@ export default function VendedoresTable({
             const dataSourceVendedor = currentDataSource[vendedor] || {};
 
             monthsArray.forEach(m => {
-                const key = `${m.ano}-${m.mes}`;
-                const val = dataSourceVendedor[key] || 0;
+                const key = `${m.ano}-${String(m.mes).padStart(2, '0')}`;
+                const unpaddedKey = `${m.ano}-${m.mes}`;
+                const val = dataSourceVendedor[key] ?? dataSourceVendedor[unpaddedKey] ?? 0;
                 row[key] = val;
                 row.total += val;
             });
@@ -225,7 +226,7 @@ export default function VendedoresTable({
                                 </div>
                             </th>
                             {monthsArray.map((m) => {
-                                const key = `${m.ano}-${m.mes}`;
+                                const key = `${m.ano}-${String(m.mes).padStart(2, '0')}`;
                                 return (
                                     <th
                                         key={key}
@@ -260,7 +261,7 @@ export default function VendedoresTable({
                                     {formatCurrency(row.total)}
                                 </td>
                                 {monthsArray.map((m) => {
-                                    const key = `${m.ano}-${m.mes}`;
+                                    const key = `${m.ano}-${String(m.mes).padStart(2, '0')}`;
                                     const value = row[key] || 0;
                                     return (
                                         <td
@@ -297,7 +298,7 @@ export default function VendedoresTable({
                                 {formatCurrency(paginatedData.reduce((acc: number, row: any) => acc + row.total, 0))}
                             </td>
                             {monthsArray.map((m) => {
-                                const key = `${m.ano}-${m.mes}`;
+                                const key = `${m.ano}-${String(m.mes).padStart(2, '0')}`;
                                 const totalMes = paginatedData.reduce((acc: number, row: any) => acc + (row[key] || 0), 0);
                                 return (
                                     <td key={key} className="px-4 py-3 text-right font-mono tabular-nums">

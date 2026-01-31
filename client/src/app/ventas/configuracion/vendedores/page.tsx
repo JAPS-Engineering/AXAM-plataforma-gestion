@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchVendedores, updateVendedor, deleteVendedor, Vendedor } from "@/lib/api";
 import {
@@ -14,13 +14,17 @@ import {
     AlertCircle
 } from "lucide-react";
 import { Sidebar } from "@/components/sidebar";
-// import { toast } from "react-hot-toast"; // Removiendo para evitar errores de módulos no encontrados
+import { Pagination } from "@/components/pagination";
 
 export default function VendedoresConfigPage() {
     const queryClient = useQueryClient();
     const [searchTerm, setSearchTerm] = useState("");
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editForm, setEditForm] = useState({ nombre: "", activo: true });
+
+    // Pagination state
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
 
     const { data: vendedores, isLoading } = useQuery({
         queryKey: ["vendedores"],
@@ -61,10 +65,31 @@ export default function VendedoresConfigPage() {
         }
     };
 
-    const filteredVendedores = vendedores?.filter(v =>
-        v.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        v.nombre?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const filteredVendedores = useMemo(() => {
+        return vendedores?.filter(v =>
+            v.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            v.nombre?.toLowerCase().includes(searchTerm.toLowerCase())
+        ) || [];
+    }, [vendedores, searchTerm]);
+
+    // Pagination Logic
+    const { paginatedData, totalPages } = useMemo(() => {
+        if (pageSize === -1) return { paginatedData: filteredVendedores, totalPages: 1 };
+
+        const total = Math.ceil(filteredVendedores.length / pageSize);
+        const start = (currentPage - 1) * pageSize;
+        const end = start + pageSize;
+
+        return {
+            paginatedData: filteredVendedores.slice(start, end),
+            totalPages: total || 1,
+        };
+    }, [filteredVendedores, currentPage, pageSize]);
+
+    // Reset page when search changes
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm]);
 
     return (
         <div className="flex h-screen bg-slate-100 overflow-hidden text-slate-900">
@@ -77,21 +102,21 @@ export default function VendedoresConfigPage() {
                             <div>
                                 <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-3">
                                     <Users className="w-8 h-8 text-blue-600" />
-                                    Gesti&oacute;n de Vendedores
+                                    Gestión de Vendedores
                                 </h1>
                                 <p className="text-slate-500 mt-2">
-                                    Configura apodos para las siglas tra&iacute;das desde Manager+
+                                    Configura apodos para las siglas traídas desde Manager+
                                 </p>
                             </div>
                         </header>
 
-                        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col">
                             <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center gap-4">
                                 <div className="relative flex-1">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                                     <input
                                         type="text"
-                                        placeholder="Buscar por c&oacute;digo o nombre..."
+                                        placeholder="Buscar por código o nombre..."
                                         value={searchTerm}
                                         onChange={(e) => setSearchTerm(e.target.value)}
                                         className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
@@ -103,7 +128,7 @@ export default function VendedoresConfigPage() {
                                 <table className="w-full text-left">
                                     <thead>
                                         <tr className="bg-slate-50 text-slate-500 text-sm uppercase tracking-wider font-semibold">
-                                            <th className="px-6 py-4">C&oacute;digo</th>
+                                            <th className="px-6 py-4">Código</th>
                                             <th className="px-6 py-4">Apodo / Nombre Real</th>
                                             <th className="px-6 py-4">Estado</th>
                                             <th className="px-6 py-4 text-right">Acciones</th>
@@ -116,14 +141,14 @@ export default function VendedoresConfigPage() {
                                                     Cargando vendedores...
                                                 </td>
                                             </tr>
-                                        ) : filteredVendedores?.length === 0 ? (
+                                        ) : paginatedData.length === 0 ? (
                                             <tr>
                                                 <td colSpan={4} className="px-6 py-8 text-center text-slate-400">
                                                     No se encontraron vendedores.
                                                 </td>
                                             </tr>
                                         ) : (
-                                            filteredVendedores?.map((v) => (
+                                            paginatedData.map((v) => (
                                                 <tr key={v.id} className="hover:bg-slate-50/50 transition-colors">
                                                     <td className="px-6 py-4 font-mono font-bold text-slate-600">
                                                         {v.codigo}
@@ -204,15 +229,30 @@ export default function VendedoresConfigPage() {
                                     </tbody>
                                 </table>
                             </div>
+
+                            <div className="border-t border-slate-100">
+                                <Pagination
+                                    currentPage={currentPage}
+                                    totalPages={totalPages}
+                                    pageSize={pageSize}
+                                    totalItems={filteredVendedores.length}
+                                    onPageChange={setCurrentPage}
+                                    onPageSizeChange={(size) => {
+                                        setPageSize(size);
+                                        setCurrentPage(1);
+                                    }}
+                                    className="border-none shadow-none rounded-none"
+                                />
+                            </div>
                         </div>
 
                         <div className="mt-6 flex items-start gap-4 p-4 bg-amber-50 rounded-xl border border-amber-100 text-amber-800">
                             <AlertCircle className="w-6 h-6 shrink-0" />
                             <div className="text-sm">
-                                <p className="font-bold mb-1">Nota sobre la sincronizaci&oacute;n</p>
+                                <p className="font-bold mb-1">Nota sobre la sincronización</p>
                                 <p>
-                                    Los vendedores se agregan autom&aacute;ticamente a esta lista la primera vez que aparecen en una sincronizaci&oacute;n de ventas.
-                                    Solo necesitas venir aqu&iacute; para asignarles su nombre real.
+                                    Los vendedores se agregan automáticamente a esta lista la primera vez que aparecen en una sincronización de ventas.
+                                    Solo necesitas venir aquí para asignarles su nombre real.
                                 </p>
                             </div>
                         </div>
