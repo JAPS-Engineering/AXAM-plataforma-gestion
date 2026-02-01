@@ -243,6 +243,7 @@ model Vendedor {
   codigo    String   @unique // Sigla original de Manager+ (ms, hm, etc)
   nombre    String?          // Apodo o nombre legible
   activo    Boolean  @default(true)
+  oculto    Boolean  @default(false)
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

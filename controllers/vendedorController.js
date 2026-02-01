@@ -19,16 +19,16 @@ async function getVendedores(req, res) {
 }
 
 /**
- * Actualizar un vendedor (apodo o estado activo)
+ * Actualizar un vendedor (apodo, estado activo u oculto)
  */
 async function updateVendedor(req, res) {
     try {
         const { id } = req.params;
-        const { nombre, activo } = req.body;
+        const { nombre, activo, oculto } = req.body;
 
         const vendedor = await prisma.vendedor.update({
             where: { id: parseInt(id) },
-            data: { nombre, activo }
+            data: { nombre, activo, oculto }
         });
 
         res.json(vendedor);
@@ -38,24 +38,7 @@ async function updateVendedor(req, res) {
     }
 }
 
-/**
- * Eliminar un vendedor
- */
-async function deleteVendedor(req, res) {
-    try {
-        const { id } = req.params;
-        await prisma.vendedor.delete({
-            where: { id: parseInt(id) }
-        });
-        res.json({ message: 'Vendedor eliminado correctamente' });
-    } catch (error) {
-        logError(`Error en deleteVendedor: ${error.message}`);
-        res.status(500).json({ error: 'Error al eliminar vendedor' });
-    }
-}
-
 module.exports = {
     getVendedores,
-    updateVendedor,
-    deleteVendedor
+    updateVendedor
 };

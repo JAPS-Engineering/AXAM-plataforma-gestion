@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea } from "recharts";
 import { TrendingUp } from "lucide-react";
 
 interface VendedorMesData {
@@ -30,6 +30,15 @@ const COLORS = [
     '#f43f5e', '#64748b', '#78716c', '#0f766e', '#b45309', '#be185d', '#4338ca', '#1d4ed8'
 ];
 
+const YEAR_BG_COLORS = [
+    'rgba(59, 130, 246, 0.05)', // Blue
+    'rgba(16, 185, 129, 0.05)', // Emerald
+    'rgba(245, 158, 11, 0.05)', // Amber
+    'rgba(139, 92, 246, 0.05)', // Violet
+    'rgba(236, 72, 153, 0.05)', // Pink
+    'rgba(6, 182, 212, 0.05)',  // Cyan
+];
+
 const DEFAULT_MONTHS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
 export default function VendedoresChart({ data, objetivos, proyecciones, view, anio, loading, monthsArray, vendedores = {}, selectedVendedores }: VendedoresChartProps) {
@@ -47,6 +56,27 @@ export default function VendedoresChart({ data, objetivos, proyecciones, view, a
             mes: i + 1
         }));
     }, [monthsArray, anio]);
+
+    // Calculate Year Regions for background coloring
+    const yearRegions = useMemo(() => {
+        if (!effectiveMonths || effectiveMonths.length === 0) return [];
+
+        const regions: { year: number; start: string; end: string }[] = [];
+        let currentRegion: { year: number; start: string; end: string } | null = null;
+
+        effectiveMonths.forEach((m) => {
+            if (!currentRegion || currentRegion.year !== m.ano) {
+                if (currentRegion) {
+                    regions.push(currentRegion);
+                }
+                currentRegion = { year: m.ano, start: m.label, end: m.label };
+            } else {
+                currentRegion.end = m.label;
+            }
+        });
+        if (currentRegion) regions.push(currentRegion);
+        return regions;
+    }, [effectiveMonths]);
 
     // Calcular vendedores visibles: si hay seleccionados usamos esos, sino top 10
     const visibleVendedores = useMemo(() => {
@@ -127,6 +157,23 @@ export default function VendedoresChart({ data, objetivos, proyecciones, view, a
                                 data={chartData}
                                 margin={{ top: 10, right: 30, left: 20, bottom: 5 }}
                             >
+                                {yearRegions.map((region, idx) => (
+                                    <ReferenceArea
+                                        key={region.year}
+                                        x1={region.start}
+                                        x2={region.end}
+                                        fill={YEAR_BG_COLORS[idx % YEAR_BG_COLORS.length]}
+                                        fillOpacity={1}
+                                        ifOverflow="extendDomain"
+                                        label={{
+                                            value: region.year.toString(),
+                                            position: 'insideTop',
+                                            fill: '#94a3b8',
+                                            fontSize: 10,
+                                            fontWeight: 600
+                                        }}
+                                    />
+                                ))}
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                 <XAxis
                                     dataKey="name"

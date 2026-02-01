@@ -216,10 +216,14 @@ async function getVentasPorVendedor(req, res) {
             });
         }
 
-        // 4. Vendedores (Para apodos)
+        // 4. Vendedores (Para apodos y estado oculto)
         const vList = await prisma.vendedor.findMany();
         const nicknameMap = {};
-        vList.forEach(v => nicknameMap[v.codigo] = v.nombre || v.codigo);
+        const hiddenCodes = [];
+        vList.forEach(v => {
+            nicknameMap[v.codigo] = v.nombre || v.codigo;
+            if (v.oculto) hiddenCodes.push(v.codigo);
+        });
 
         // 5. Convertir a formato Record para el frontend
         const resVentas = {};
@@ -266,6 +270,7 @@ async function getVentasPorVendedor(req, res) {
             proyecciones: resProyecciones,
             ranking,
             vendedores: nicknameMap, // Nuevo: Map de apodos
+            hiddenCodes, // Lista de códigos ocultos
             meta: {
                 monthsArray: pastMonthsArray,
                 futureMonthsArray,

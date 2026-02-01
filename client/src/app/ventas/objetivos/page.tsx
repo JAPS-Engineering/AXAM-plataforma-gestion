@@ -44,6 +44,7 @@ interface SalesData {
     ranking: { name: string; value: number; percentage: string }[];
     ventasPorFamilia?: Record<string, Record<string, number>>; // New: Seller -> Family -> Total
     vendedores?: Record<string, string>; // Code -> Name
+    hiddenCodes?: string[]; // New: List of hidden vendor codes
     meta: {
         monthsArray: VendedorMesData[]; // Historic
         futureMonthsArray?: VendedorMesData[]; // Future (Planning)
@@ -289,7 +290,10 @@ export default function ObjetivosPage() {
     // Initialize Trend Chart Sellers
     useEffect(() => {
         if (data?.vendedores && !hasInitializedSellersTrend.current) {
-            const sellerCodes = Object.keys(data.vendedores).filter(code => data.vendedores![code] !== "Sin Asignar");
+            const sellerCodes = Object.keys(data.vendedores).filter(code =>
+                data.vendedores![code] !== "Sin Asignar" &&
+                !data.hiddenCodes?.includes(code)
+            );
             if (selectedVendedoresTrend.length === 0) {
                 setSelectedVendedoresTrend(sellerCodes);
             }
@@ -302,7 +306,12 @@ export default function ObjetivosPage() {
     };
     const selectAllTrendSellers = () => {
         if (data?.vendedores) {
-            setSelectedVendedoresTrend(Object.keys(data.vendedores).filter(code => data.vendedores![code] !== "Sin Asignar"));
+            setSelectedVendedoresTrend(
+                Object.keys(data.vendedores).filter(code =>
+                    data.vendedores![code] !== "Sin Asignar" &&
+                    !data.hiddenCodes?.includes(code)
+                )
+            );
         }
     };
     const clearAllTrendSellers = () => setSelectedVendedoresTrend([]);
@@ -393,8 +402,35 @@ export default function ObjetivosPage() {
     // Set default selected seller
     useEffect(() => {
         if (data?.vendedores && !selectedSellerForFamily) {
-            const validSellers = Object.entries(data.vendedores).filter(([_, name]) => name !== "Sin Asignar");
+            const validSellers = Object.entries(data.vendedores).filter(([code, name]) =>
+                name !== "Sin Asignar" &&
+                !data.hiddenCodes?.includes(code)
+            );
             if (validSellers.length > 0) setSelectedSellerForFamily(validSellers[0][0]);
+        }
+    }, [data, selectedSellerForFamily]);
+
+    // Auto-deselect hidden vendors when data updates
+    useEffect(() => {
+        if (data?.hiddenCodes) {
+            // 1. Clean up Trend Chart Selection
+            setSelectedVendedoresTrend(prev => {
+                const hiddenButSelected = prev.filter(code => data.hiddenCodes?.includes(code));
+                if (hiddenButSelected.length > 0) {
+                    return prev.filter(code => !data.hiddenCodes?.includes(code));
+                }
+                return prev;
+            });
+
+            // 2. Clean up Family Chart Selection
+            if (selectedSellerForFamily && data.hiddenCodes.includes(selectedSellerForFamily)) {
+                const validSellers = Object.entries(data.vendedores || {}).filter(([code, name]) =>
+                    name !== "Sin Asignar" &&
+                    !data.hiddenCodes?.includes(code)
+                );
+                // If there are valid sellers, pick the first one, otherwise clear
+                setSelectedSellerForFamily(validSellers.length > 0 ? validSellers[0][0] : "");
+            }
         }
     }, [data, selectedSellerForFamily]);
 
@@ -654,7 +690,11 @@ export default function ObjetivosPage() {
                                                     </div>
                                                     <div className="space-y-1 max-h-60 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-200">
                                                         {Object.entries(data?.vendedores || {})
-                                                            .filter(([_, name]) => name !== "Sin Asignar" && name.toLowerCase().includes(sellerSearchTerm.toLowerCase()))
+                                                            .filter(([code, name]) =>
+                                                                name !== "Sin Asignar" &&
+                                                                name.toLowerCase().includes(sellerSearchTerm.toLowerCase()) &&
+                                                                !data?.hiddenCodes?.includes(code)
+                                                            )
                                                             .map(([code, name], idx) => {
                                                                 const isSelected = selectedVendedoresTrend.includes(code);
                                                                 return (
@@ -734,7 +774,10 @@ export default function ObjetivosPage() {
                                         className="text-sm bg-transparent border-none focus:outline-none font-bold text-indigo-700 cursor-pointer min-w-[150px]"
                                     >
                                         {Object.entries(data?.vendedores || {})
-                                            .filter(([_, name]) => name !== "Sin Asignar")
+                                            .filter(([code, name]) =>
+                                                name !== "Sin Asignar" &&
+                                                !data?.hiddenCodes?.includes(code)
+                                            )
                                             .map(([code, name]) => (
                                                 <option key={code} value={code}>
                                                     {name}
@@ -854,6 +897,7 @@ export default function ObjetivosPage() {
                                         : (data.meta.futureMonthsArray || [])
                                 }
                                 loading={loading}
+                                hiddenCodes={data?.hiddenCodes}
                             />
                         ) : null}
                     </div>

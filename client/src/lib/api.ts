@@ -404,6 +404,7 @@ export interface Vendedor {
     codigo: string;
     nombre: string | null;
     activo: boolean;
+    oculto: boolean;
 }
 
 export async function fetchVendedores(): Promise<Vendedor[]> {
@@ -414,8 +415,4 @@ export async function fetchVendedores(): Promise<Vendedor[]> {
 export async function updateVendedor(id: number, data: Partial<Vendedor>): Promise<Vendedor> {
     const response = await api.put<Vendedor>(`/vendedores/${id}`, data);
     return response.data;
-}
-
-export async function deleteVendedor(id: number): Promise<void> {
-    await api.delete(`/vendedores/${id}`);
 }

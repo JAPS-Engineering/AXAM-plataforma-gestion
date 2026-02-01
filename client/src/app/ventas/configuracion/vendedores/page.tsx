@@ -2,11 +2,12 @@
 
 import React, { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchVendedores, updateVendedor, deleteVendedor, Vendedor } from "@/lib/api";
+import { fetchVendedores, updateVendedor, Vendedor } from "@/lib/api";
 import {
     Users,
     Edit2,
-    Trash2,
+    Eye,
+    EyeOff,
     Check,
     X,
     UserPlus,
@@ -20,7 +21,7 @@ export default function VendedoresConfigPage() {
     const queryClient = useQueryClient();
     const [searchTerm, setSearchTerm] = useState("");
     const [editingId, setEditingId] = useState<number | null>(null);
-    const [editForm, setEditForm] = useState({ nombre: "", activo: true });
+    const [editForm, setEditForm] = useState({ nombre: "", activo: true, oculto: false });
 
     // Pagination state
     const [currentPage, setCurrentPage] = useState(1);
@@ -35,34 +36,23 @@ export default function VendedoresConfigPage() {
         mutationFn: ({ id, data }: { id: number; data: Partial<Vendedor> }) => updateVendedor(id, data),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["vendedores"] });
-            alert("Vendedor actualizado");
+            // alert("Vendedor actualizado"); // Removed alert for smoother UX
             setEditingId(null);
         },
         onError: () => alert("Error al actualizar vendedor")
     });
 
-    const deleteMutation = useMutation({
-        mutationFn: deleteVendedor,
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["vendedores"] });
-            alert("Vendedor eliminado");
-        },
-        onError: () => alert("Error al eliminar vendedor")
-    });
-
     const startEditing = (v: Vendedor) => {
         setEditingId(v.id);
-        setEditForm({ nombre: v.nombre || "", activo: v.activo });
+        setEditForm({ nombre: v.nombre || "", activo: v.activo, oculto: v.oculto });
     };
 
     const handleSave = (id: number) => {
         updateMutation.mutate({ id, data: editForm });
     };
 
-    const handleDelete = (id: number) => {
-        if (confirm("¿Estás seguro de que deseas eliminar este vendedor?")) {
-            deleteMutation.mutate(id);
-        }
+    const toggleOculto = (v: Vendedor) => {
+        updateMutation.mutate({ id: v.id, data: { oculto: !v.oculto } });
     };
 
     const filteredVendedores = useMemo(() => {
@@ -105,7 +95,7 @@ export default function VendedoresConfigPage() {
                                     Gestión de Vendedores
                                 </h1>
                                 <p className="text-slate-500 mt-2">
-                                    Configura apodos para las siglas traídas desde Manager+
+                                    Configura apodos y visibilidad de los vendedores
                                 </p>
                             </div>
                         </header>
@@ -131,19 +121,20 @@ export default function VendedoresConfigPage() {
                                             <th className="px-6 py-4">Código</th>
                                             <th className="px-6 py-4">Apodo / Nombre Real</th>
                                             <th className="px-6 py-4">Estado</th>
+                                            <th className="px-6 py-4">Visibilidad</th>
                                             <th className="px-6 py-4 text-right">Acciones</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {isLoading ? (
                                             <tr>
-                                                <td colSpan={4} className="px-6 py-8 text-center text-slate-400">
+                                                <td colSpan={5} className="px-6 py-8 text-center text-slate-400">
                                                     Cargando vendedores...
                                                 </td>
                                             </tr>
                                         ) : paginatedData.length === 0 ? (
                                             <tr>
-                                                <td colSpan={4} className="px-6 py-8 text-center text-slate-400">
+                                                <td colSpan={5} className="px-6 py-8 text-center text-slate-400">
                                                     No se encontraron vendedores.
                                                 </td>
                                             </tr>
@@ -184,6 +175,11 @@ export default function VendedoresConfigPage() {
                                                             </span>
                                                         )}
                                                     </td>
+                                                    <td className="px-6 py-4">
+                                                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${!v.oculto ? 'bg-blue-50 text-blue-600' : 'bg-amber-100 text-amber-700'}`}>
+                                                            {!v.oculto ? 'VISIBLE' : 'OCULTO'}
+                                                        </span>
+                                                    </td>
                                                     <td className="px-6 py-4 text-right">
                                                         <div className="flex justify-end gap-2">
                                                             {editingId === v.id ? (
@@ -213,11 +209,11 @@ export default function VendedoresConfigPage() {
                                                                         <Edit2 className="w-4 h-4" />
                                                                     </button>
                                                                     <button
-                                                                        onClick={() => handleDelete(v.id)}
-                                                                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-red-100"
-                                                                        title="Eliminar"
+                                                                        onClick={() => toggleOculto(v)}
+                                                                        className={`p-2 rounded-lg transition-colors border ${v.oculto ? 'text-slate-400 hover:bg-slate-50 border-slate-100' : 'text-slate-600 hover:bg-slate-50 border-slate-100'}`}
+                                                                        title={v.oculto ? "Mostrar Vendedor" : "Ocultar Vendedor"}
                                                                     >
-                                                                        <Trash2 className="w-4 h-4" />
+                                                                        {v.oculto ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                                                     </button>
                                                                 </>
                                                             )}

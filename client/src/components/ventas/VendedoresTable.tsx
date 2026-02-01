@@ -20,6 +20,7 @@ interface VendedoresTableProps {
     monthsArray: VendedorMesData[];
     vendedores?: Record<string, string>; // Map of code -> nickname
     loading?: boolean;
+    hiddenCodes?: string[];
 }
 
 interface EditableAmountCellProps {
@@ -105,7 +106,8 @@ export default function VendedoresTable({
     onSave,
     monthsArray,
     vendedores = {},
-    loading
+    loading,
+    hiddenCodes = []
 }: VendedoresTableProps) {
 
     const [sortConfig, setSortConfig] = useState<{ column: string, direction: 'asc' | 'desc' }>({ column: 'total', direction: 'desc' });
@@ -117,11 +119,18 @@ export default function VendedoresTable({
     const currentDataSource = view === "Real" ? data : view === "Objetivo" ? objetivos : proyecciones;
 
     // Obtener lista única de vendedores
-    const allVendedores = useMemo(() => Array.from(new Set([
-        ...Object.keys(data),
-        ...Object.keys(objetivos),
-        ...Object.keys(proyecciones)
-    ])), [data, objetivos, proyecciones]);
+    const allVendedores = useMemo(() => {
+        const unique = new Set([
+            ...Object.keys(data),
+            ...Object.keys(objetivos),
+            ...Object.keys(proyecciones)
+        ]);
+        if (hiddenCodes && hiddenCodes.length > 0) {
+            hiddenCodes.forEach(code => unique.delete(code));
+        }
+        return Array.from(unique);
+    }, [data, objetivos, proyecciones, hiddenCodes]);
+
 
     const tableData = useMemo(() => {
         const rows = allVendedores.map((vendedor: string) => {
