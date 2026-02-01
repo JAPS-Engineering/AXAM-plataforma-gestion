@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Sidebar } from "@/components/sidebar";
+import { Pagination } from "@/components/pagination";
 import {
     TrendingUp,
     Calculator,
@@ -13,9 +14,13 @@ import {
     Minus,
     Save,
     CheckCircle2,
-    XCircle
+    XCircle,
+    ChevronUp,
+    ChevronDown,
+    ChevronsUpDown
 } from "lucide-react";
 import { PendingShipmentsSync } from "@/components/pending-shipments-sync";
+import { cn } from "@/lib/utils";
 
 interface SuggestedPurchase {
     id: number;
@@ -24,7 +29,7 @@ interface SuggestedPurchase {
     familia: string;
     stockActual: number;
     stockMinimo: number | null;
-    stockOptimo?: number | null; // Nuevo campo opcional
+    stockOptimo?: number | null;
     promedioVenta: number;
     tendencia: number;
     prediccionProximoMes: number;
@@ -32,7 +37,7 @@ interface SuggestedPurchase {
     mesesCobertura: number;
     algoritmo: string;
     compraRealizar: number | null;
-    pendientes?: number; // Campo para los pendientes de despacho
+    pendientes?: number;
 }
 
 interface ApiResponse {
@@ -51,7 +56,41 @@ interface Proveedor {
     productosCount: number;
 }
 
+type SortDirection = "asc" | "desc" | null;
+interface SortConfig {
+    column: string | null;
+    direction: SortDirection;
+}
+
+function SortButton({ column, currentSort, onSort, isNumeric = false }: { column: string, currentSort: SortConfig, onSort: (c: string) => void, isNumeric?: boolean }) {
+    const isActive = currentSort.column === column;
+    const direction = isActive ? currentSort.direction : null;
+
+    return (
+        <button
+            onClick={() => onSort(column)}
+            className={cn(
+                "ml-1 p-0.5 rounded hover:bg-slate-200/50 transition-colors inline-flex items-center",
+                isActive && "text-indigo-600"
+            )}
+            title={isNumeric
+                ? (direction === "desc" ? "Ordenar de menor a mayor" : "Ordenar de mayor a menor")
+                : (direction === "asc" ? "Ordenar Z-A" : "Ordenar A-Z")
+            }
+        >
+            {direction === "asc" ? (
+                <ChevronUp className="h-4 w-4" />
+            ) : direction === "desc" ? (
+                <ChevronDown className="h-4 w-4" />
+            ) : (
+                <ChevronsUpDown className="h-3.5 w-3.5 opacity-40" />
+            )}
+        </button>
+    );
+}
+
 const ALGORITMOS = [
+    // ... (rest of the code remains the same until AnalisisPage)
     {
         value: "LINEAL",
         label: "Promedio Simple",
@@ -103,6 +142,13 @@ export default function AnalisisPage() {
     // Búsqueda
     const [search, setSearch] = useState("");
 
+    // Ordenamiento
+    const [sortConfig, setSortConfig] = useState<SortConfig>({ column: null, direction: null });
+
+    // Paginación
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(12);
+
     // Estado para ediciones pendientes
     const [editingValues, setEditingValues] = useState<Record<number, string>>({});
     const [savingId, setSavingId] = useState<number | null>(null);
@@ -132,12 +178,25 @@ export default function AnalisisPage() {
         setFetchingPendientes(false);
     }, []);
 
+    // Función para manejar ordenamiento
+    const handleSort = (column: string) => {
+        setSortConfig((prev) => {
+            if (prev.column === column) {
+                if (prev.direction === "desc") return { column, direction: "asc" };
+                if (prev.direction === "asc") return { column: null, direction: null };
+                return { column, direction: "desc" };
+            }
+            return { column, direction: column === "sku" || column === "descripcion" ? "asc" : "desc" };
+        });
+    };
+
     // Función para calcular sugerencias
     const calcularSugerencias = useCallback(async () => {
         if (!proveedorSeleccionado) return;
 
         setLoading(true);
         setError(null);
+        setCurrentPage(1);
 
         try {
             const params = new URLSearchParams({
@@ -170,9 +229,8 @@ export default function AnalisisPage() {
 
     const itemsFiltrados = useMemo(() => {
         if (!data?.items) return [];
-        let result = data.items;
+        let result = [...data.items];
 
-        // Search filter
         if (search.trim()) {
             const term = search.toLowerCase();
             result = result.filter(item =>
@@ -181,17 +239,60 @@ export default function AnalisisPage() {
             );
         }
 
-        // Unified sales filter logic
         if (salesStatus === 'with_sales') {
             result = result.filter((p) => (p.promedioVenta || 0) > 0);
         } else if (salesStatus === 'without_sales') {
             result = result.filter((p) => (p.promedioVenta || 0) === 0);
         }
 
-        return result;
-    }, [data?.items, search, salesStatus]);
+        // Aplicar Ordenamiento
+        const { column, direction } = sortConfig;
+        if (column && direction) {
+            result.sort((a, b) => {
+                let aVal: any;
+                let bVal: any;
 
-    // Guardar valor de A Comprar
+                if (column === "pendientes") {
+                    aVal = pendientesData[a.sku] || 0;
+                    bVal = pendientesData[b.sku] || 0;
+                } else if (column === "sugerido_final") {
+                    aVal = Math.max(0, a.cantidadSugerida - (pendientesData[a.sku] || 0));
+                    bVal = Math.max(0, b.cantidadSugerida - (pendientesData[b.sku] || 0));
+                } else {
+                    aVal = a[column as keyof SuggestedPurchase];
+                    bVal = b[column as keyof SuggestedPurchase];
+                }
+
+                if (typeof aVal === "string" && typeof bVal === "string") {
+                    return direction === "asc" ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+                }
+
+                const numA = Number(aVal) || 0;
+                const numB = Number(bVal) || 0;
+
+                return direction === "asc" ? numA - numB : numB - numA;
+            });
+        }
+
+        return result;
+    }, [data?.items, search, salesStatus, sortConfig, pendientesData]);
+
+    // Lógica de Paginación
+    const { paginatedItems, totalPages } = useMemo(() => {
+        const total = pageSize === -1 ? 1 : Math.ceil(itemsFiltrados.length / pageSize);
+        const start = (currentPage - 1) * pageSize;
+        const end = pageSize === -1 ? itemsFiltrados.length : start + pageSize;
+
+        return {
+            paginatedItems: pageSize === -1 ? itemsFiltrados : itemsFiltrados.slice(start, end),
+            totalPages: total || 1,
+        };
+    }, [itemsFiltrados, currentPage, pageSize]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [search, salesStatus, algoritmo, mesesHistorico, mesesCobertura, soloEnQuiebre, sortConfig]);
+
     const handleSaveCompra = async (item: SuggestedPurchase) => {
         const value = editingValues[item.id];
         if (value === undefined) return;
@@ -209,7 +310,6 @@ export default function AnalisisPage() {
                 })
             });
 
-            // Actualizar localmente
             if (data) {
                 setData({
                     ...data,
@@ -218,7 +318,6 @@ export default function AnalisisPage() {
                     )
                 });
             }
-            // Limpiar edición
             setEditingValues(prev => {
                 const next = { ...prev };
                 delete next[item.id];
@@ -238,7 +337,6 @@ export default function AnalisisPage() {
             <Sidebar />
 
             <div className="flex-1 flex flex-col overflow-hidden">
-                {/* Header */}
                 <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shadow-sm">
                     <div className="flex items-center gap-3">
                         <Calculator className="h-6 w-6 text-indigo-600" />
@@ -264,10 +362,8 @@ export default function AnalisisPage() {
                 </header>
 
                 <main className="flex-1 overflow-auto p-6 relative">
-                    {/* Configuración Panel */}
                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                            {/* Familia/Proveedor */}
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-2">
                                     {tipoFiltro === 'familia' ? 'Familia' : 'Proveedor'}
@@ -292,7 +388,6 @@ export default function AnalisisPage() {
                                 </select>
                             </div>
 
-                            {/* Algoritmo */}
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-2">
                                     Algoritmo de Cálculo
@@ -310,7 +405,6 @@ export default function AnalisisPage() {
                                 </select>
                             </div>
 
-                            {/* Meses Histórico */}
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-2">
                                     Histórico de Ventas
@@ -328,7 +422,6 @@ export default function AnalisisPage() {
                                 </select>
                             </div>
 
-                            {/* Meses Cobertura */}
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-2">
                                     Cobertura Objetivo
@@ -346,7 +439,6 @@ export default function AnalisisPage() {
                                 </select>
                             </div>
 
-                            {/* Solo Bajo Mínimo */}
                             <div className="flex items-end">
                                 <label className="flex items-center gap-2 cursor-pointer">
                                     <input
@@ -359,9 +451,6 @@ export default function AnalisisPage() {
                                 </label>
                             </div>
 
-
-
-                            {/* Filtro de Ventas */}
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-2">
                                     Filtrar Ventas
@@ -379,7 +468,6 @@ export default function AnalisisPage() {
                         </div>
                     </div>
 
-                    {/* Explicación del Algoritmo */}
                     <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border border-indigo-200 p-5 mb-6">
                         <div className="flex items-start gap-3">
                             <Info className="h-5 w-5 text-indigo-600 mt-0.5 flex-shrink-0" />
@@ -412,18 +500,17 @@ export default function AnalisisPage() {
                         </div>
                     </div>
 
-                    {/* Resumen */}
                     {
                         data && (
                             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
                                 <div className="flex items-center gap-6">
                                     <div className="text-center">
-                                        <p className="text-2xl font-bold text-slate-900">{data.totalItems}</p>
-                                        <p className="text-sm text-slate-500">Productos analizados</p>
+                                        <p className="text-2xl font-bold text-slate-900">{itemsFiltrados.length}</p>
+                                        <p className="text-sm text-slate-500">Productos filtrados</p>
                                     </div>
                                     <div className="text-center">
                                         <p className="text-2xl font-bold text-indigo-600">
-                                            {data.totalUnidades.toLocaleString("es-CL")}
+                                            {itemsFiltrados.reduce((acc, i) => acc + i.cantidadSugerida, 0).toLocaleString("es-CL")}
                                         </p>
                                         <p className="text-sm text-slate-500">Unidades Sugeridas</p>
                                     </div>
@@ -436,7 +523,6 @@ export default function AnalisisPage() {
                         )
                     }
 
-                    {/* Búsqueda */}
                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-4">
                         <div className="relative max-w-md">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -450,8 +536,7 @@ export default function AnalisisPage() {
                         </div>
                     </div>
 
-                    {/* Tabla de Resultados */}
-                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
                         {loading ? (
                             <div className="flex items-center justify-center h-64">
                                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
@@ -460,154 +545,209 @@ export default function AnalisisPage() {
                             <div className="flex items-center justify-center h-64 text-red-600">
                                 Error: {error}
                             </div>
-                        ) : !data || data.items.length === 0 ? (
+                        ) : !data || itemsFiltrados.length === 0 ? (
                             <div className="flex flex-col items-center justify-center h-64 text-slate-500">
                                 <Calculator className="h-12 w-12 mb-4 text-slate-300" />
                                 <p className="font-medium">Sin datos para analizar</p>
                                 <p className="text-sm">Selecciona una familia y ajusta los parámetros</p>
                             </div>
                         ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm">
-                                    <thead className="bg-slate-50 border-b border-slate-200">
-                                        <tr>
-                                            <th className="px-4 py-3 text-left font-semibold text-slate-600">SKU</th>
-                                            <th className="px-4 py-3 text-left font-semibold text-slate-600">Descripción</th>
-                                            <th className="px-4 py-3 text-right font-semibold text-slate-600">Stock Actual</th>
-                                            <th className="px-4 py-3 text-right font-semibold text-red-600">Stock Mín.</th>
-                                            <th className="px-4 py-3 text-right font-semibold text-blue-600">Stock Ópt.</th>
-                                            <th className="px-4 py-3 text-right font-semibold text-slate-600">Prom. Venta</th>
-                                            {algoritmo === "PREDICCION" && (
-                                                <>
-                                                    <th className="px-4 py-3 text-right font-semibold text-purple-700 bg-purple-50">
-                                                        Tendencia
-                                                    </th>
-                                                    <th className="px-4 py-3 text-right font-semibold text-purple-700 bg-purple-50">
-                                                        Predicción
-                                                    </th>
-                                                </>
-                                            )}
-                                            <th className="px-4 py-3 text-right font-semibold text-amber-700 bg-amber-50">
-                                                Pendiente (3M)
-                                            </th>
-                                            <th className="px-4 py-3 text-right font-semibold text-emerald-700 bg-emerald-50">
-                                                Sugerido
-                                            </th>
-                                            <th className="px-4 py-3 text-center font-semibold text-blue-700 bg-blue-50">
-                                                A Comprar
-                                            </th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {itemsFiltrados.map((item, idx) => {
-                                            const bajoMinimo = item.stockMinimo !== null && item.stockActual < item.stockMinimo;
-                                            const isEditing = editingValues[item.id] !== undefined;
-                                            const currentValue = isEditing
-                                                ? editingValues[item.id]
-                                                : (item.compraRealizar ?? "").toString();
+                            <>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                        <thead className="bg-slate-50 border-b border-slate-200">
+                                            <tr>
+                                                <th className="px-4 py-3 text-left font-semibold text-slate-600 min-w-[120px]">
+                                                    <div className="flex items-center gap-1">
+                                                        SKU
+                                                        <SortButton column="sku" currentSort={sortConfig} onSort={handleSort} />
+                                                    </div>
+                                                </th>
+                                                <th className="px-4 py-3 text-left font-semibold text-slate-600 min-w-[200px]">
+                                                    <div className="flex items-center gap-1">
+                                                        Descripción
+                                                        <SortButton column="descripcion" currentSort={sortConfig} onSort={handleSort} />
+                                                    </div>
+                                                </th>
+                                                <th className="px-4 py-3 text-right font-semibold text-slate-600">
+                                                    <div className="flex items-center justify-end gap-1">
+                                                        Stock Actual
+                                                        <SortButton column="stockActual" currentSort={sortConfig} onSort={handleSort} isNumeric />
+                                                    </div>
+                                                </th>
+                                                <th className="px-4 py-3 text-right font-semibold text-red-600">
+                                                    <div className="flex items-center justify-end gap-1">
+                                                        Stock Mín.
+                                                        <SortButton column="stockMinimo" currentSort={sortConfig} onSort={handleSort} isNumeric />
+                                                    </div>
+                                                </th>
+                                                <th className="px-4 py-3 text-right font-semibold text-blue-600">
+                                                    <div className="flex items-center justify-end gap-1">
+                                                        Stock Ópt.
+                                                        <SortButton column="stockOptimo" currentSort={sortConfig} onSort={handleSort} isNumeric />
+                                                    </div>
+                                                </th>
+                                                <th className="px-4 py-3 text-right font-semibold text-slate-600">
+                                                    <div className="flex items-center justify-end gap-1">
+                                                        Prom. Venta
+                                                        <SortButton column="promedioVenta" currentSort={sortConfig} onSort={handleSort} isNumeric />
+                                                    </div>
+                                                </th>
+                                                {algoritmo === "PREDICCION" && (
+                                                    <>
+                                                        <th className="px-4 py-3 text-right font-semibold text-purple-700 bg-purple-50">
+                                                            <div className="flex items-center justify-end gap-1">
+                                                                Tendencia
+                                                                <SortButton column="tendencia" currentSort={sortConfig} onSort={handleSort} isNumeric />
+                                                            </div>
+                                                        </th>
+                                                        <th className="px-4 py-3 text-right font-semibold text-purple-700 bg-purple-50">
+                                                            <div className="flex items-center justify-end gap-1">
+                                                                Predicción
+                                                                <SortButton column="prediccionProximoMes" currentSort={sortConfig} onSort={handleSort} isNumeric />
+                                                            </div>
+                                                        </th>
+                                                    </>
+                                                )}
+                                                <th className="px-4 py-3 text-right font-semibold text-amber-700 bg-amber-50">
+                                                    <div className="flex items-center justify-end gap-1">
+                                                        Pendiente (3M)
+                                                        <SortButton column="pendientes" currentSort={sortConfig} onSort={handleSort} isNumeric />
+                                                    </div>
+                                                </th>
+                                                <th className="px-4 py-3 text-right font-semibold text-emerald-700 bg-emerald-50">
+                                                    <div className="flex items-center justify-end gap-1">
+                                                        Sugerido
+                                                        <SortButton column="sugerido_final" currentSort={sortConfig} onSort={handleSort} isNumeric />
+                                                    </div>
+                                                </th>
+                                                <th className="px-4 py-3 text-center font-semibold text-blue-700 bg-blue-50">
+                                                    A Comprar
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {paginatedItems.map((item, idx) => {
+                                                const bajoMinimo = item.stockMinimo !== null && item.stockActual < item.stockMinimo;
+                                                const isEditing = editingValues[item.id] !== undefined;
+                                                const currentValue = isEditing
+                                                    ? editingValues[item.id]
+                                                    : (item.compraRealizar ?? "").toString();
 
-                                            return (
-                                                <tr
-                                                    key={item.id}
-                                                    className={bajoMinimo ? "bg-red-50" : idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}
-                                                >
-                                                    <td className="px-4 py-3 font-mono font-medium text-slate-900">
-                                                        {item.sku}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-slate-600 max-w-[250px] truncate">
-                                                        {item.descripcion}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right tabular-nums">
-                                                        {item.stockActual.toLocaleString("es-CL")}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right tabular-nums text-red-600 font-medium">
-                                                        {item.stockMinimo !== null
-                                                            ? item.stockMinimo.toLocaleString("es-CL")
-                                                            : <span className="text-slate-300">-</span>
-                                                        }
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right tabular-nums text-blue-600">
-                                                        {item.stockOptimo !== undefined && item.stockOptimo !== null
-                                                            ? item.stockOptimo.toLocaleString("es-CL")
-                                                            : <span className="text-slate-300">-</span>
-                                                        }
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right tabular-nums">
-                                                        {item.promedioVenta.toLocaleString("es-CL")}
-                                                    </td>
-                                                    {algoritmo === "PREDICCION" && (
-                                                        <>
-                                                            <td className="px-4 py-3 text-right bg-purple-50">
-                                                                <div className="flex items-center justify-end gap-1">
-                                                                    {item.tendencia > 0 ? (
-                                                                        <ArrowUp className="h-4 w-4 text-green-600" />
-                                                                    ) : item.tendencia < 0 ? (
-                                                                        <ArrowDown className="h-4 w-4 text-red-600" />
-                                                                    ) : (
-                                                                        <Minus className="h-4 w-4 text-slate-400" />
-                                                                    )}
-                                                                    <span className={
-                                                                        item.tendencia > 0 ? "text-green-600 font-medium" :
-                                                                            item.tendencia < 0 ? "text-red-600 font-medium" :
-                                                                                "text-slate-500"
-                                                                    }>
-                                                                        {item.tendencia > 0 ? "+" : ""}{item.tendencia.toFixed(1)}/mes
-                                                                    </span>
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-4 py-3 text-right bg-purple-50 tabular-nums font-medium text-purple-700">
-                                                                {item.prediccionProximoMes?.toLocaleString("es-CL") || "-"}
-                                                            </td>
-                                                        </>
-                                                    )}
-                                                    <td className="px-4 py-3 text-right bg-amber-50 tabular-nums font-medium text-amber-700">
-                                                        {fetchingPendientes ? (
-                                                            <div className="h-4 w-8 bg-amber-200 animate-pulse rounded ml-auto"></div>
-                                                        ) : (
-                                                            pendientesData[item.sku] ? pendientesData[item.sku].toLocaleString("es-CL") : "0"
+                                                return (
+                                                    <tr
+                                                        key={item.id}
+                                                        className={bajoMinimo ? "bg-red-50" : idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}
+                                                    >
+                                                        <td className="px-4 py-3 font-mono font-medium text-slate-900">
+                                                            {item.sku}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-slate-600 max-w-[250px] truncate">
+                                                            {item.descripcion}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right tabular-nums">
+                                                            {item.stockActual.toLocaleString("es-CL")}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right tabular-nums text-red-600 font-medium">
+                                                            {item.stockMinimo !== null
+                                                                ? item.stockMinimo.toLocaleString("es-CL")
+                                                                : <span className="text-slate-300">-</span>
+                                                            }
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right tabular-nums text-blue-600">
+                                                            {item.stockOptimo !== undefined && item.stockOptimo !== null
+                                                                ? item.stockOptimo.toLocaleString("es-CL")
+                                                                : <span className="text-slate-300">-</span>
+                                                            }
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right tabular-nums">
+                                                            {item.promedioVenta.toLocaleString("es-CL")}
+                                                        </td>
+                                                        {algoritmo === "PREDICCION" && (
+                                                            <>
+                                                                <td className="px-4 py-3 text-right bg-purple-50">
+                                                                    <div className="flex items-center justify-end gap-1">
+                                                                        {item.tendencia > 0 ? (
+                                                                            <ArrowUp className="h-4 w-4 text-green-600" />
+                                                                        ) : item.tendencia < 0 ? (
+                                                                            <ArrowDown className="h-4 w-4 text-red-600" />
+                                                                        ) : (
+                                                                            <Minus className="h-4 w-4 text-slate-400" />
+                                                                        )}
+                                                                        <span className={
+                                                                            item.tendencia > 0 ? "text-green-600 font-medium" :
+                                                                                item.tendencia < 0 ? "text-red-600 font-medium" :
+                                                                                    "text-slate-500"
+                                                                        }>
+                                                                            {item.tendencia > 0 ? "+" : ""}{item.tendencia.toFixed(1)}/mes
+                                                                        </span>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-4 py-3 text-right bg-purple-50 tabular-nums font-medium text-purple-700">
+                                                                    {item.prediccionProximoMes?.toLocaleString("es-CL") || "-"}
+                                                                </td>
+                                                            </>
                                                         )}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right font-bold text-emerald-700 bg-emerald-50 tabular-nums">
-                                                        {/* Restar pendientes del sugerido si existen */}
-                                                        {Math.max(0, item.cantidadSugerida - (pendientesData[item.sku] || 0)).toLocaleString("es-CL")}
-                                                    </td>
-                                                    <td className="px-4 py-2 bg-blue-50">
-                                                        <div className="flex items-center gap-1">
-                                                            <input
-                                                                type="text"
-                                                                inputMode="numeric"
-                                                                value={currentValue}
-                                                                onChange={(e) => setEditingValues(prev => ({
-                                                                    ...prev,
-                                                                    [item.id]: e.target.value
-                                                                }))}
-                                                                onKeyDown={(e) => {
-                                                                    if (e.key === "Enter") handleSaveCompra(item);
-                                                                }}
-                                                                className="w-20 px-2 py-1 text-right border border-blue-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
-                                                                placeholder="0"
-                                                            />
-                                                            {isEditing && (
-                                                                <button
-                                                                    onClick={() => handleSaveCompra(item)}
-                                                                    disabled={savingId === item.id}
-                                                                    className="p-1 text-blue-600 hover:bg-blue-100 rounded"
-                                                                >
-                                                                    <Save className={`h-4 w-4 ${savingId === item.id ? "animate-pulse" : ""}`} />
-                                                                </button>
+                                                        <td className="px-4 py-3 text-right bg-amber-50 tabular-nums font-medium text-amber-700">
+                                                            {fetchingPendientes ? (
+                                                                <div className="h-4 w-8 bg-amber-200 animate-pulse rounded ml-auto"></div>
+                                                            ) : (
+                                                                pendientesData[item.sku] ? pendientesData[item.sku].toLocaleString("es-CL") : "0"
                                                             )}
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right font-bold text-emerald-700 bg-emerald-50 tabular-nums">
+                                                            {Math.max(0, item.cantidadSugerida - (pendientesData[item.sku] || 0)).toLocaleString("es-CL")}
+                                                        </td>
+                                                        <td className="px-4 py-2 bg-blue-50">
+                                                            <div className="flex items-center gap-1">
+                                                                <input
+                                                                    type="text"
+                                                                    inputMode="numeric"
+                                                                    value={currentValue}
+                                                                    onChange={(e) => setEditingValues(prev => ({
+                                                                        ...prev,
+                                                                        [item.id]: e.target.value
+                                                                    }))}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === "Enter") handleSaveCompra(item);
+                                                                    }}
+                                                                    className="w-20 px-2 py-1 text-right border border-blue-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+                                                                    placeholder="0"
+                                                                />
+                                                                {isEditing && (
+                                                                    <button
+                                                                        onClick={() => handleSaveCompra(item)}
+                                                                        disabled={savingId === item.id}
+                                                                        className="p-1 text-blue-600 hover:bg-blue-100 rounded"
+                                                                    >
+                                                                        <Save className={`h-4 w-4 ${savingId === item.id ? "animate-pulse" : ""}`} />
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div className="border-t border-slate-200">
+                                    <Pagination
+                                        currentPage={currentPage}
+                                        totalPages={totalPages}
+                                        pageSize={pageSize}
+                                        totalItems={itemsFiltrados.length}
+                                        onPageChange={setCurrentPage}
+                                        onPageSizeChange={(size) => { setPageSize(size); setCurrentPage(1); }}
+                                        className="border-none shadow-none"
+                                    />
+                                </div>
+                            </>
                         )}
                     </div>
-                </main >
-            </div >
-        </div >
+                </main>
+            </div>
+        </div>
     );
 }

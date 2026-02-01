@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { cn, formatCLP } from "@/lib/utils";
 import { VentasTendenciasResponse, TendenciaDataPoint } from "@/lib/api";
+import { Pagination } from "@/components/pagination";
 
 interface TendenciasTableProps {
     data: VentasTendenciasResponse | undefined;
@@ -56,12 +57,14 @@ function SortButton({ column, currentSort, onSort, isNumeric = false }: { column
 
 export function TendenciasTable({ data, metric, selectedFamilies, loading, familyGroups }: TendenciasTableProps) {
     const [sortConfig, setSortConfig] = useState<SortConfig>({ column: "total", direction: "desc" });
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(12);
 
     const handleSort = (column: SortColumn) => {
         setSortConfig((prev) => {
             if (prev.column === column) {
                 if (prev.direction === "desc") return { column, direction: "asc" };
-                if (prev.direction === "asc") return { column: null, direction: null }; // Reset or cycle? Defaulting to desc first is common for numbers
+                if (prev.direction === "asc") return { column: null, direction: null };
                 return { column, direction: "desc" };
             }
             return { column, direction: column === "familia" ? "asc" : "desc" };
@@ -123,6 +126,27 @@ export function TendenciasTable({ data, metric, selectedFamilies, loading, famil
         return rows;
     }, [data, metric, selectedFamilies, sortConfig]);
 
+    // Calcular totales antes de paginar para mostrar en footer
+    const columnTotals: Record<string, number> = {};
+    const months = data?.tendencias?.map(t => t.label) || [];
+    if (tableData.length > 0) {
+        months.forEach(m => {
+            columnTotals[m] = tableData.reduce((acc, row) => acc + (Number(row[m]) || 0), 0);
+        });
+    }
+    const grandTotal = tableData.reduce((acc, row) => acc + row.total, 0);
+
+
+    // Pagination Logic
+    const totalItems = tableData.length;
+    const totalPages = pageSize === -1 ? 1 : Math.ceil(totalItems / pageSize);
+    const paginatedData = useMemo(() => {
+        if (pageSize === -1) return tableData;
+        const start = (currentPage - 1) * pageSize;
+        return tableData.slice(start, start + pageSize);
+    }, [tableData, currentPage, pageSize]);
+
+
     if (loading) {
         return (
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center justify-center h-[200px]">
@@ -133,17 +157,8 @@ export function TendenciasTable({ data, metric, selectedFamilies, loading, famil
 
     if (!data || tableData.length === 0) return null;
 
-    const months = data.tendencias.map(t => t.label);
-
-    // Calculate Column Totals
-    const columnTotals: Record<string, number> = {};
-    months.forEach(m => {
-        columnTotals[m] = tableData.reduce((acc, row) => acc + (Number(row[m]) || 0), 0);
-    });
-    const grandTotal = tableData.reduce((acc, row) => acc + row.total, 0);
-
     return (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mt-6">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mt-6 flex flex-col">
             <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                     <thead className="bg-slate-50 border-b border-slate-200">
@@ -171,7 +186,7 @@ export function TendenciasTable({ data, metric, selectedFamilies, loading, famil
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                        {tableData.map((row, idx) => (
+                        {paginatedData.map((row, idx) => (
                             <tr key={row.familia} className="hover:bg-slate-50 transition-colors">
                                 <td className="sticky left-0 bg-white px-4 py-2 font-medium text-slate-800 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                                     {row.familia}
@@ -201,6 +216,19 @@ export function TendenciasTable({ data, metric, selectedFamilies, loading, famil
                         </tr>
                     </tfoot>
                 </table>
+            </div>
+
+            {/* Pagination Controls */}
+            <div className="border-t border-slate-200">
+                <Pagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    pageSize={pageSize}
+                    totalItems={totalItems}
+                    onPageChange={setCurrentPage}
+                    onPageSizeChange={(size) => { setPageSize(size); setCurrentPage(1); }}
+                    className="border-none shadow-none"
+                />
             </div>
         </div>
     );
