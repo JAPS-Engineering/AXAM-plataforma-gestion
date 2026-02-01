@@ -95,7 +95,7 @@ export function TendenciasChart({
         // Filter only those that exist in data.familias (safety) and Sort Ascending
         return (data.familias || [])
             .filter(f => effectiveSelectedRawFamilies.includes(f))
-            .sort((a, b) => (familyWeights.get(a) || 0) - (familyWeights.get(b) || 0));
+            .sort((a, b) => (familyWeights.get(b) || 0) - (familyWeights.get(a) || 0));
     })();
 
     const currentMonthData = data?.tendencias.find(t => t.label === selectedMonthLabel);
@@ -120,7 +120,7 @@ export function TendenciasChart({
                     <div>
                         <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                             <TrendingUp className="h-5 w-5 text-indigo-500" />
-                            Tendencias por Categoría
+                            Ventas Mensuales por Familia
                         </h3>
                         <p className="text-xs text-slate-500">Composición de ventas en el tiempo</p>
                     </div>
@@ -263,11 +263,11 @@ export function TendenciasChart({
                         <BarChart
                             data={data?.tendencias || []}
                             margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-                            stackOffset="sign"
                         >
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                             <XAxis
                                 dataKey="label"
+                                type="category"
                                 stroke="#64748b"
                                 fontSize={11}
                                 tickLine={false}
@@ -341,7 +341,7 @@ export function TendenciasChart({
                                         stackId="a"
                                         fill={PIE_COLORS[stableIdx % PIE_COLORS.length]} // Stable colors
                                         radius={[0, 0, 0, 0]}
-                                        maxBarSize={50}
+                                        barSize={45}
                                     />
                                 );
                             })}
