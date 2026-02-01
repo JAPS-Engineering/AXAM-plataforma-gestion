@@ -369,6 +369,50 @@ async function syncInitial(months = 12) {
     }
 }
 
+/**
+ * Sincronización completa desde enero 2021
+ * Para análisis multi-año
+ */
+async function syncFull2021() {
+    logSection('SINCRONIZACIÓN COMPLETA (DESDE ENERO 2021)');
+
+    const startYear = 2021;
+    const startMonth = 1;
+    const today = new Date();
+    const endYear = getYear(today);
+    const endMonth = getMonth(today) + 1;
+
+    try {
+        // 1. Sincronizar productos
+        await syncNewProducts();
+
+        // 2. Sincronizar cada mes desde enero 2021
+        let year = startYear;
+        let month = startMonth;
+        let totalMeses = 0;
+
+        while (year < endYear || (year === endYear && month < endMonth)) {
+            await syncFullMonth(year, month);
+            totalMeses++;
+
+            month++;
+            if (month > 12) {
+                month = 1;
+                year++;
+            }
+        }
+
+        // 3. Sincronizar datos del mes actual
+        await syncCurrentMonthData();
+
+        logSection(`SINCRONIZACIÓN COMPLETA: ${totalMeses} meses desde enero 2021`);
+
+    } catch (error) {
+        logError(`Error en sincronización completa: ${error.message}`);
+        throw error;
+    }
+}
+
 // CLI
 async function main() {
     const args = process.argv.slice(2);
@@ -384,6 +428,11 @@ async function main() {
         case 'initial':
             const months = parseInt(args[1]) || 12;
             await syncInitial(months);
+            break;
+
+        case 'full':
+        case '2021':
+            await syncFull2021();
             break;
 
         case 'month':
@@ -407,6 +456,7 @@ Uso: node scripts/syncDaily.js [comando] [opciones]
 Comandos:
   daily, yesterday  - Sincroniza el día anterior (defecto, para CRON)
   init, initial [N] - Sincronización inicial de N meses (defecto: 12)
+  full, 2021        - Sincronización completa desde enero 2021
   month [año] [mes] - Sincronizar un mes específico
   current           - Sincronizar solo datos del mes actual
   products          - Sincronizar solo productos
@@ -426,6 +476,7 @@ if (require.main === module) {
 module.exports = {
     syncYesterday,
     syncInitial,
+    syncFull2021,
     syncFullMonth,
     syncCurrentMonthData,
     syncNewProducts,

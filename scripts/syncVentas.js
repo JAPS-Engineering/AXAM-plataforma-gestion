@@ -7,7 +7,8 @@ const { getMonthlySales } = require('../services/salesService');
 const { saveVentasMensuales } = require('../services/ventaService');
 
 // Configuración de fecha de inicio (ajustable)
-const FECHA_INICIO = new Date(2025, 0, 1);
+// Sincronización desde 2021 para análisis multi-año
+const FECHA_INICIO = new Date(2021, 0, 1);
 
 async function syncMonth(db, date) {
     const year = date.getFullYear();

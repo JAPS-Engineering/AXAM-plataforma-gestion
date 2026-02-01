@@ -27,36 +27,50 @@ function getMesActual() {
  */
 async function rotarVentasActualesAHistoricas() {
     try {
-        const mesActual = getMesActual();
-        
+        const { getChileDate } = require('../utils/timezone');
+
+        // El mes actual es el MES NUEVO (ej: febrero)
+        // Los datos en VentaActual son del MES ANTERIOR (ej: enero)
+        // Por lo tanto, necesitamos guardar los datos con la fecha del mes ANTERIOR
+
+        const fechaChile = getChileDate();
+        const mesAnterior = subMonths(fechaChile, 1);
+        const mesHistorico = {
+            ano: getYear(mesAnterior),
+            mes: getMonth(mesAnterior) + 1
+        };
+
         logInfo(`Iniciando rotación de ventas actuales a históricas...`);
-        
+        logInfo(`Guardando datos como: ${mesHistorico.ano}-${mesHistorico.mes} (mes que se cierra)`);
+
         // Obtener todas las ventas actuales
         const ventasActuales = await prisma.ventaActual.findMany({
             include: {
                 producto: true
             }
         });
-        
+
         if (ventasActuales.length === 0) {
             logInfo('No hay ventas actuales para rotar');
             return { rotadas: 0, eliminadas: 0 };
         }
-        
+
         let rotadas = 0;
         let errores = 0;
-        
+
         // Procesar en transacción para asegurar consistencia
         await prisma.$transaction(async (tx) => {
             for (const ventaActual of ventasActuales) {
                 try {
                     // Intentar crear o actualizar venta histórica
+                    // Nota: El schema requiere productoId, ano, mes, vendedor como unique constraint
                     await tx.ventaHistorica.upsert({
                         where: {
-                            productoId_ano_mes: {
+                            productoId_ano_mes_vendedor: {
                                 productoId: ventaActual.productoId,
-                                ano: mesActual.ano,
-                                mes: mesActual.mes
+                                ano: mesHistorico.ano,
+                                mes: mesHistorico.mes,
+                                vendedor: ventaActual.vendedor
                             }
                         },
                         update: {
@@ -65,33 +79,39 @@ async function rotarVentasActualesAHistoricas() {
                         },
                         create: {
                             productoId: ventaActual.productoId,
-                            ano: mesActual.ano,
-                            mes: mesActual.mes,
+                            ano: mesHistorico.ano,
+                            mes: mesHistorico.mes,
+                            vendedor: ventaActual.vendedor,
                             cantidadVendida: ventaActual.cantidadVendida,
                             montoNeto: ventaActual.montoNeto
                         }
                     });
-                    
+
                     // Resetear venta actual (mantener stock pero resetear ventas)
                     await tx.ventaActual.update({
-                        where: { productoId: ventaActual.productoId },
+                        where: {
+                            productoId_vendedor: {
+                                productoId: ventaActual.productoId,
+                                vendedor: ventaActual.vendedor
+                            }
+                        },
                         data: {
                             cantidadVendida: 0,
                             montoNeto: 0
                             // Mantener stockActual
                         }
                     });
-                    
+
                     rotadas++;
                 } catch (error) {
                     errores++;
-                    logError(`Error al rotar venta del producto ${ventaActual.productoId}: ${error.message}`);
+                    logError(`Error al rotar venta del producto ${ventaActual.productoId} vendedor ${ventaActual.vendedor}: ${error.message}`);
                 }
             }
         });
-        
+
         logSuccess(`Rotación completada: ${rotadas} ventas rotadas, ${errores} errores`);
-        
+
         return { rotadas, errores };
     } catch (error) {
         logError(`Error en rotación de ventas: ${error.message}`);
@@ -100,70 +120,33 @@ async function rotarVentasActualesAHistoricas() {
 }
 
 /**
- * Limpiar datos históricos mayores a 12 meses
+ * Mantener todos los datos históricos (sin limpieza)
+ * NOTA: Esta función fue deshabilitada para permitir análisis multi-año.
+ * Los datos históricos se conservan indefinidamente desde 2021.
  */
 async function limpiarDatosAntiguos() {
-    try {
-        const mesActual = getMesActual();
-        const fechaLimite = subMonths(new Date(mesActual.ano, mesActual.mes - 1, 1), 12);
-        const anoLimite = getYear(fechaLimite);
-        const mesLimite = getMonth(fechaLimite) + 1;
-        
-        logInfo(`Limpiando datos históricos anteriores a ${mesLimite}/${anoLimite}...`);
-        
-        // Eliminar ventas históricas mayores a 12 meses
-        const resultadoVentas = await prisma.ventaHistorica.deleteMany({
-            where: {
-                OR: [
-                    { ano: { lt: anoLimite } },
-                    {
-                        ano: anoLimite,
-                        mes: { lt: mesLimite }
-                    }
-                ]
-            }
-        });
-        
-        // Eliminar pedidos históricos mayores a 12 meses
-        const resultadoPedidos = await prisma.pedido.deleteMany({
-            where: {
-                OR: [
-                    { ano: { lt: anoLimite } },
-                    {
-                        ano: anoLimite,
-                        mes: { lt: mesLimite }
-                    }
-                ]
-            }
-        });
-        
-        logSuccess(`Limpieza completada: ${resultadoVentas.count} ventas eliminadas, ${resultadoPedidos.count} pedidos eliminados`);
-        
-        return {
-            ventasEliminadas: resultadoVentas.count,
-            pedidosEliminados: resultadoPedidos.count
-        };
-    } catch (error) {
-        logError(`Error al limpiar datos antiguos: ${error.message}`);
-        throw error;
-    }
+    // Deshabilitado: mantenemos todos los datos históricos para análisis por año
+    logInfo('Limpieza de datos antiguos deshabilitada - conservando todo el historial');
+    return {
+        ventasEliminadas: 0,
+        pedidosEliminados: 0
+    };
 }
 
 /**
- * Ejecutar rotación completa: rotar ventas actuales y limpiar datos antiguos
+ * Ejecutar rotación completa: rotar ventas actuales a históricas
+ * NOTA: Ya no se eliminan datos antiguos para permitir análisis multi-año
  */
 async function ejecutarRotacionCompleta() {
     try {
-        logInfo('=== INICIANDO ROTACIÓN COMPLETA DE DATOS ===');
-        
+        logInfo('=== INICIANDO ROTACIÓN DE DATOS ===');
+
         const rotacion = await rotarVentasActualesAHistoricas();
-        const limpieza = await limpiarDatosAntiguos();
-        
-        logSuccess('=== ROTACIÓN COMPLETA FINALIZADA ===');
-        
+
+        logSuccess('=== ROTACIÓN FINALIZADA ===');
+
         return {
-            rotacion,
-            limpieza
+            rotacion
         };
     } catch (error) {
         logError(`Error en rotación completa: ${error.message}`);
@@ -173,32 +156,50 @@ async function ejecutarRotacionCompleta() {
 
 /**
  * Verificar si es necesario rotar (si cambió el mes)
- * Retorna true si el último mes procesado es diferente al mes actual
+ * Retorna true si hay datos en VentaActual que necesitan rotarse Y aún no se han rotado
  */
 async function necesitaRotacion() {
     try {
-        // Buscar la venta histórica más reciente
-        const ultimaVentaHistorica = await prisma.ventaHistorica.findFirst({
-            orderBy: [
-                { ano: 'desc' },
-                { mes: 'desc' }
-            ]
+        const { getChileDate } = require('../utils/timezone');
+
+        // Verificar si hay datos en VentaActual
+        const totalVentaActual = await prisma.ventaActual.aggregate({
+            _sum: { montoNeto: true, cantidadVendida: true }
         });
-        
-        const mesActual = getMesActual();
-        
-        // Si no hay ventas históricas, no necesita rotación aún
-        if (!ultimaVentaHistorica) {
+
+        // Si VentaActual está vacío o reseteado, no necesita rotación
+        const tieneVentas = (totalVentaActual._sum.montoNeto || 0) > 0 ||
+            (totalVentaActual._sum.cantidadVendida || 0) > 0;
+
+        if (!tieneVentas) {
             return false;
         }
-        
-        // Si el último mes histórico es diferente al mes actual, necesita rotación
-        const ultimoMesHistorico = {
-            ano: ultimaVentaHistorica.ano,
-            mes: ultimaVentaHistorica.mes
+
+        // Verificar si el mes anterior ya fue rotado
+        const fechaChile = getChileDate();
+        const mesAnterior = subMonths(fechaChile, 1);
+        const mesHistoricoEsperado = {
+            ano: getYear(mesAnterior),
+            mes: getMonth(mesAnterior) + 1
         };
-        
-        return ultimoMesHistorico.ano !== mesActual.ano || ultimoMesHistorico.mes !== mesActual.mes;
+
+        // Verificar si ya existe data para el mes anterior en histórico
+        const yaRotado = await prisma.ventaHistorica.findFirst({
+            where: {
+                ano: mesHistoricoEsperado.ano,
+                mes: mesHistoricoEsperado.mes
+            }
+        });
+
+        // Si los datos del mes anterior ya están rot ados Y VentaActual tiene ventas,
+        // significa que VentaActual tiene datos del MES NUEVO (no necesita rotación)
+        if (yaRotado && tieneVentas) {
+            return false;
+        }
+
+        // Si no está rotado y tiene ventas, necesita rotación
+        return !yaRotado && tieneVentas;
+
     } catch (error) {
         logError(`Error al verificar necesidad de rotación: ${error.message}`);
         return false;

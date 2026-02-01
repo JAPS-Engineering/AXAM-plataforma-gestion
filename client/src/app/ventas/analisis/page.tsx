@@ -310,7 +310,11 @@ export default function AnalisisVentasPage() {
                                     <option value={1}>Mes Actual</option>
                                     <option value={3}>Últimos 3 meses</option>
                                     <option value={6}>Últimos 6 meses</option>
-                                    <option value={12}>Últimos 12 meses</option>
+                                    <option value={12}>Último año</option>
+                                    <option value={24}>Últimos 2 años</option>
+                                    <option value={36}>Últimos 3 años</option>
+                                    <option value={48}>Últimos 4 años</option>
+                                    <option value={60}>Últimos 5 años</option>
                                 </select>
                             </div>
                         ) : (
