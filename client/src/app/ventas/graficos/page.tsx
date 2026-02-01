@@ -77,6 +77,39 @@ export default function GraficosVentasPage() {
 
     const isLoadingAll = isLoading || isLoadingAdv || isLoadingTrends;
 
+    // Fix KPI Growth Calculation (Frontend patch to avoid 0 sales from current incomplete month)
+    const correctedResumenData = useMemo(() => {
+        if (!resumenData) return null;
+
+        let growth = resumenData.kpis.crecimiento;
+        const items = resumenData.ventasMensuales || [];
+
+        if (items.length > 0) {
+            const currentMonthKey = getCurrentMonth();
+            const lastItem = items[items.length - 1];
+            const lastItemKey = `${lastItem.ano}-${String(lastItem.mes).padStart(2, '0')}`;
+
+            let comparisonValue = lastItem.montoNeto;
+
+            // If last item is current incomplete month, try to use previous month
+            if (lastItemKey === currentMonthKey && items.length > 1) {
+                comparisonValue = items[items.length - 2].montoNeto;
+            }
+
+            // Recalculate vs Average
+            const avg = resumenData.kpis.promedioMensual || 1;
+            growth = ((comparisonValue - avg) / avg) * 100;
+        }
+
+        return {
+            ...resumenData,
+            kpis: {
+                ...resumenData.kpis,
+                crecimiento: growth
+            }
+        };
+    }, [resumenData]);
+
     // --- Lógica de Grupos de Familias ---
     interface FamilyGroup {
         id: string;
@@ -368,7 +401,7 @@ export default function GraficosVentasPage() {
                 <main className="flex-1 overflow-auto p-6 scrollbar-thin scrollbar-thumb-slate-200">
                     {/* Resumen General */}
                     <div className="mb-6">
-                        <ResumenKPIs kpis={resumenData?.kpis} loading={isLoading} error={error} />
+                        <ResumenKPIs kpis={correctedResumenData?.kpis} loading={isLoading} error={error} />
                     </div>
 
                     {isLoadingAll && !resumenData ? (

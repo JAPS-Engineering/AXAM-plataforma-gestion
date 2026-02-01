@@ -138,7 +138,20 @@ export default function AnalisisVentasPage() {
 
         // 2. Enhance items with new metrics
         let enrichedResult = result.map((item) => {
-            const lastMonthSale = item.ventasMeses[item.ventasMeses.length - 1]?.montoNeto || 0;
+            // Fix Trend Calculation: If last month is current month (incomplete), use previous month
+            const currentMonthKey = getCurrentMonth(); // "YYYY-MM"
+            const lastMonthData = item.ventasMeses[item.ventasMeses.length - 1];
+
+            let compareSale = lastMonthData?.montoNeto || 0;
+
+            if (lastMonthData) {
+                const key = `${lastMonthData.ano}-${String(lastMonthData.mes).padStart(2, '0')}`;
+                if (key === currentMonthKey && item.ventasMeses.length > 1) {
+                    compareSale = item.ventasMeses[item.ventasMeses.length - 2].montoNeto || 0;
+                }
+            }
+
+            const lastMonthSale = compareSale;
             const avgSale = item.promedioMonto || 0;
             const trend = avgSale > 0 ? ((lastMonthSale - avgSale) / avgSale) * 100 : 0;
 

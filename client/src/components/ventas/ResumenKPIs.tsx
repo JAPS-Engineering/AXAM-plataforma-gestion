@@ -42,7 +42,13 @@ export function ResumenKPIs({ kpis, loading, error }: ResumenKPIsProps) {
                     <span className={`px-2 py-0.5 rounded text-sm font-bold ${(kpis?.crecimiento || 0) >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                         {(kpis?.crecimiento || 0) > 0 ? '+' : ''}{(kpis?.crecimiento || 0).toFixed(1)}%
                     </span>
-                    <span className="text-xs text-slate-500">vs promedio</span>
+                    <div className="flex items-center gap-1 group/tooltip relative cursor-help">
+                        <span className="text-xs text-slate-500">vs promedio</span>
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-slate-800 text-white text-[10px] rounded shadow-lg opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all z-50 text-center pointer-events-none">
+                            Comparación del último mes cerrado vs Promedio del período
+                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-800"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden group hover:shadow-md transition-shadow">
