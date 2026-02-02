@@ -172,100 +172,6 @@ async function syncDaySales(date) {
 }
 
 /**
- * Upsert de venta mensual
- */
-async function upsertMonthlySale(productoId, ano, mes, cantidad, montoNeto, vendedor = '', accumulate = false) {
-    const existing = await prisma.ventaHistorica.findUnique({
-        where: {
-            productoId_ano_mes_vendedor: { productoId, ano, mes, vendedor: vendedor || '' }
-        }
-    });
-
-    // Asegurar que el vendedor existe en la tabla de Vendedores (Auto-registro)
-    if (vendedor) {
-        await prisma.vendedor.upsert({
-            where: { codigo: vendedor },
-            update: { activo: true },
-            create: { codigo: vendedor, nombre: vendedor, activo: true }
-        });
-    }
-
-    if (existing) {
-        if (accumulate) {
-            await prisma.ventaHistorica.update({
-                where: { id: existing.id },
-                data: {
-                    cantidadVendida: existing.cantidadVendida + cantidad,
-                    montoNeto: existing.montoNeto + montoNeto
-                }
-            });
-        } else {
-            await prisma.ventaHistorica.update({
-                where: { id: existing.id },
-                data: {
-                    cantidadVendida: cantidad,
-                    montoNeto: montoNeto
-                }
-            });
-        }
-    } else {
-        await prisma.ventaHistorica.create({
-            data: {
-                productoId,
-                ano,
-                mes,
-                vendedor: vendedor || '',
-                cantidadVendida: cantidad,
-                montoNeto: montoNeto
-            }
-        });
-    }
-}
-
-/**
- * Sincronizar mes completo (para inicialización o recálculo)
- */
-async function syncFullMonth(year, month) {
-    logSection(`SINCRONIZANDO MES COMPLETO: ${month}/${year}`);
-
-    try {
-        const { sales, documentsCount } = await getMonthlySales(year, month);
-
-        if (sales.size === 0) {
-            logWarning(`Sin ventas para ${month}/${year}`);
-            return { processed: 0, updated: 0 };
-        }
-
-        let updated = 0;
-
-        for (const [key, data] of sales) {
-            const { sku, vendedor } = data;
-            let producto = await prisma.producto.findUnique({
-                where: { sku }
-            });
-
-            if (!producto) {
-                producto = await prisma.producto.create({
-                    data: { sku, descripcion: 'Producto nuevo (auto-creado)', familia: '' }
-                });
-            }
-
-            // Reemplazar venta mensual (no acumular)
-            await upsertMonthlySale(producto.id, year, month, data.cantidad, data.montoNeto, vendedor, false);
-            updated++;
-        }
-
-        logSuccess(`${documentsCount} documentos, ${updated} productos actualizados`);
-
-        return { processed: documentsCount, updated };
-
-    } catch (error) {
-        logError(`Error sincronizando ${month}/${year}: ${error.message}`);
-        throw error;
-    }
-}
-
-/**
  * Sincronizar stock actual y ventas del mes actual
  * @param {boolean} includeToday - Si true, incluye ventas hasta AHORA. Si false, solo hasta ayer (para CRON)
  */
@@ -327,9 +233,6 @@ async function syncCurrentMonthData(includeToday = false) {
         const productMap = new Map(allProducts.map(p => [p.sku, p.id]));
 
         // Optimización vendedores: Upsert solo si no existen (o caché simple)
-        // Obtenemos todos los vendedores activos para evitar upserts innecesarios
-        // (Aunque para asegurar nombres actualizados, upsert es mejor, pero costoso si son muchos pedidos)
-        // Asumimos que hay pocos vendedores (< 100). Hacemos un upsert masivo o cache.
         const activeVendedores = new Set((await prisma.vendedor.findMany({ select: { codigo: true } })).map(v => v.codigo));
 
         const ventasAInsertar = [];
@@ -346,10 +249,6 @@ async function syncCurrentMonthData(includeToday = false) {
             // Gestionar vendedor
             if (vendedor && !vendedoresVistos.has(vendedor)) {
                 vendedoresVistos.add(vendedor);
-                // Solo hacemos upsert si es nuevo o para asegurar. 
-                // Dado el volumen bajo de vendedores, podemos hacer esto secuencial o Promise.all fuera del loop.
-                // Lo agregamos a una lista de promesas de vendedores?
-                // Simplificación: Upsert inmediato (son pocos) pero con catch
                 await prisma.vendedor.upsert({
                     where: { codigo: vendedor },
                     update: { activo: true },
@@ -411,17 +310,21 @@ async function syncYesterday() {
     logSection('SINCRONIZACIÓN INCREMENTAL DIARIA');
 
     const yesterday = subDays(new Date(), 1);
+    const year = getYear(yesterday);
+    const month = getMonth(yesterday) + 1;
 
-    logInfo(`Fecha de sincronización: ${format(yesterday, 'dd/MM/yyyy')}`);
+    logInfo(`Fecha de sincronización (ayer): ${format(yesterday, 'dd/MM/yyyy')}`);
 
     try {
-        // 1. Sincronizar nuevos productos
+        // 1. Sincronizar nuevos productos (con filtro WhiteList)
         await syncNewProducts();
 
-        // 2. Sincronizar ventas de ayer
-        await syncDaySales(yesterday);
+        // 2. Sincronizar MES COMPLETO de ayer para asegurar consistencia (idempotencia)
+        // En lugar de sumar solo el día (que podría duplicar si se corre 2 veces),
+        // volvemos a calcular el mes completo hasta ayer.
+        await syncFullMonth(year, month);
 
-        // 3. Actualizar datos del mes actual (stock + ventas acumuladas)
+        // 3. Actualizar datos del mes actual (stock + ventas acumuladas en VentaActual)
         await syncCurrentMonthData();
 
         logSection('SINCRONIZACIÓN COMPLETADA');
@@ -429,6 +332,145 @@ async function syncYesterday() {
 
     } catch (error) {
         logError(`Error en sincronización: ${error.message}`);
+        throw error;
+    }
+}
+
+/**
+ * Upsert de venta mensual (Helper individual y para syncFullMonth)
+ */
+async function upsertMonthlySale(productoId, ano, mes, cantidad, montoNeto, vendedor = '', accumulate = false) {
+    const where = { productoId_ano_mes_vendedor: { productoId, ano, mes, vendedor: vendedor || '' } };
+
+    // Check exist
+    const existing = await prisma.ventaHistorica.findUnique({ where });
+
+    // Ensure vendedor
+    if (vendedor) {
+        await prisma.vendedor.upsert({
+            where: { codigo: vendedor },
+            create: { codigo: vendedor, nombre: vendedor, activo: true },
+            update: { activo: true }
+        });
+    }
+
+    if (existing) {
+        const data = accumulate ? {
+            cantidadVendida: existing.cantidadVendida + cantidad,
+            montoNeto: existing.montoNeto + montoNeto
+        } : {
+            cantidadVendida: cantidad,
+            montoNeto: montoNeto
+        };
+        await prisma.ventaHistorica.update({ where: { id: existing.id }, data });
+    } else {
+        await prisma.ventaHistorica.create({
+            data: { productoId, ano, mes, vendedor: vendedor || '', cantidadVendida: cantidad, montoNeto }
+        });
+    }
+}
+
+/**
+ * Sincronizar mes completo (OPTIMIZADO)
+ */
+async function syncFullMonth(year, month) {
+    logSection(`SINCRONIZANDO MES COMPLETO: ${month}/${year}`);
+
+    try {
+        const { sales, documentsCount } = await getMonthlySales(year, month);
+
+        if (sales.size === 0) {
+            logWarning(`Sin ventas para ${month}/${year}`);
+            return { processed: 0, updated: 0 };
+        }
+
+        // 1. Cargar datos necesarios en memoria (Bulk)
+        const allProducts = await prisma.producto.findMany({ select: { id: true, sku: true } });
+        const productMap = new Map(allProducts.map(p => [p.sku, p.id]));
+
+        // 2. Obtener ventas históricas existentes para este mes (Bulk)
+        const existingSales = await prisma.ventaHistorica.findMany({
+            where: { ano: year, mes: month }
+        });
+        const salesMap = new Map();
+        existingSales.forEach(s => salesMap.set(`${s.productoId}-${s.vendedor}`, s));
+
+        // 3. Procesar diferencials
+        const updates = [];
+        const creates = [];
+        const vendedoresVistos = new Set();
+        const activeVendedores = new Set((await prisma.vendedor.findMany({ select: { codigo: true } })).map(v => v.codigo));
+
+        let updatedCount = 0;
+
+        for (const [key, data] of sales) {
+            const { sku, vendedor } = data;
+
+            // Resolver ID de producto
+            let productoId = productMap.get(sku);
+            if (!productoId) {
+                try {
+                    const newProd = await prisma.producto.create({
+                        data: { sku, descripcion: `Producto ${sku} (Auto-creado)`, familia: 'SIN DEFINIR' }
+                    });
+                    productoId = newProd.id;
+                    productMap.set(sku, productoId); // Cachear
+                } catch (e) { continue; }
+            }
+
+            // Gestionar Vendedor
+            const vendKey = vendedor || '';
+            if (vendKey && !vendedoresVistos.has(vendKey)) {
+                vendedoresVistos.add(vendKey);
+                await prisma.vendedor.upsert({
+                    where: { codigo: vendKey },
+                    create: { codigo: vendKey, nombre: vendKey, activo: true },
+                    update: { activo: true }
+                });
+            }
+
+            // Logic: OVERWRITE (no accumulate)
+            const mapKey = `${productoId}-${vendKey}`;
+            const existingRecord = salesMap.get(mapKey);
+
+            if (existingRecord) {
+                // Update if changed
+                if (existingRecord.cantidadVendida !== data.cantidad || Math.abs(existingRecord.montoNeto - data.montoNeto) > 1) {
+                    updates.push(prisma.ventaHistorica.update({
+                        where: { id: existingRecord.id },
+                        data: { cantidadVendida: data.cantidad, montoNeto: data.montoNeto }
+                    }));
+                }
+            } else {
+                // Create
+                creates.push(prisma.ventaHistorica.create({
+                    data: {
+                        productoId,
+                        ano: year,
+                        mes: month,
+                        vendedor: vendKey,
+                        cantidadVendida: data.cantidad,
+                        montoNeto: data.montoNeto
+                    }
+                }));
+            }
+        }
+
+        // Ejecutar Batch
+        if (creates.length > 0) {
+            for (let i = 0; i < creates.length; i += 50) await Promise.all(creates.slice(i, i + 50));
+        }
+        if (updates.length > 0) {
+            for (let i = 0; i < updates.length; i += 50) await Promise.all(updates.slice(i, i + 50));
+        }
+
+        updatedCount = creates.length + updates.length;
+        logSuccess(`${documentsCount} documentos procesados, ${updatedCount} registros actualizados en VentaHistorica`);
+
+        return { processed: documentsCount, updated: updatedCount };
+
+    } catch (error) {
+        logError(`Error sincronizando ${month}/${year}: ${error.message}`);
         throw error;
     }
 }
