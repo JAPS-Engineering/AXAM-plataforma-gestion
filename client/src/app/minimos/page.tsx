@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { AlertTriangle, Save, Search, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { AlertTriangle, Save, Search, X } from "lucide-react";
 import { Sidebar } from "@/components/sidebar";
+import { Pagination } from "@/components/pagination";
 
 interface Producto {
     id: number;
@@ -21,18 +22,20 @@ export default function MinimosPage() {
     const [search, setSearch] = useState("");
     const [filter, setFilter] = useState<"todos" | "configurados" | "sin_configurar">("todos");
     const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
     const [totalPages, setTotalPages] = useState(1);
+    const [totalItems, setTotalItems] = useState(0);
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editValue, setEditValue] = useState<string>("");
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
-    const pageSize = 20;
 
     const fetchProductos = useCallback(async () => {
         setLoading(true);
         try {
+            const effectivePageSize = pageSize === -1 ? 10000 : pageSize;
             const params = new URLSearchParams({
                 page: page.toString(),
-                pageSize: pageSize.toString(),
+                pageSize: effectivePageSize.toString(),
                 search,
                 filter,
             });
@@ -40,12 +43,13 @@ export default function MinimosPage() {
             const data = await res.json();
             setProductos(data.productos);
             setTotalPages(data.totalPages);
+            setTotalItems(data.totalItems || data.productos.length);
         } catch (error) {
             console.error("Error fetching productos:", error);
         } finally {
             setLoading(false);
         }
-    }, [page, search, filter]);
+    }, [page, pageSize, search, filter]);
 
     useEffect(() => {
         fetchProductos();
@@ -312,35 +316,24 @@ export default function MinimosPage() {
                                 )}
                             </tbody>
                         </table>
-                    </div>
-                </div>
 
-                {/* Pagination */}
-                {totalPages > 1 && (
-                    <div className="bg-white border-t border-slate-200 px-6 py-3">
-                        <div className="flex items-center justify-between">
-                            <span className="text-sm text-slate-500">
-                                Página {page} de {totalPages}
-                            </span>
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                                    disabled={page === 1}
-                                    className="p-2 rounded-lg border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    <ChevronLeft className="h-4 w-4" />
-                                </button>
-                                <button
-                                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                                    disabled={page === totalPages}
-                                    className="p-2 rounded-lg border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    <ChevronRight className="h-4 w-4" />
-                                </button>
-                            </div>
+                        {/* Pagination - inside card like ResumenMesActualTable */}
+                        <div className="border-t border-slate-200">
+                            <Pagination
+                                currentPage={page}
+                                totalPages={totalPages}
+                                pageSize={pageSize}
+                                totalItems={totalItems}
+                                onPageChange={setPage}
+                                onPageSizeChange={(size) => {
+                                    setPageSize(size);
+                                    setPage(1);
+                                }}
+                                className="border-none shadow-none"
+                            />
                         </div>
                     </div>
-                )}
+                </div>
             </div>
         </div>
     );

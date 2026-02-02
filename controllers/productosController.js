@@ -448,6 +448,7 @@ async function getProductosMinimos(req, res) {
         res.json({
             productos: productosFormateados,
             total,
+            totalItems: total,
             page: pageNum,
             pageSize: pageSizeNum,
             totalPages: Math.ceil(total / pageSizeNum)
