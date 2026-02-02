@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { CheckCircle2, Loader2, XCircle, Terminal } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -23,16 +23,36 @@ const INITIAL_STEPS: Step[] = [
     { id: "data", label: "Ventas y Stock del Mes", status: "pending" },
 ];
 
+const TIMEOUT_MS = 45000; // 45 seconds timeout
+
 export function SyncModal({ isOpen, onClose }: SyncModalProps) {
     const [steps, setSteps] = useState<Step[]>(INITIAL_STEPS);
     const [completed, setCompleted] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [timedOut, setTimedOut] = useState(false);
+    const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const eventSourceRef = useRef<EventSource | null>(null);
+
+    const resetTimeout = () => {
+        if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+        }
+        timeoutRef.current = setTimeout(() => {
+            setTimedOut(true);
+            if (eventSourceRef.current) {
+                eventSourceRef.current.close();
+            }
+        }, TIMEOUT_MS);
+    };
 
     useEffect(() => {
         if (!isOpen) {
             setSteps(INITIAL_STEPS);
             setCompleted(false);
             setError(null);
+            setTimedOut(false);
+            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+            if (eventSourceRef.current) eventSourceRef.current.close();
             return;
         }
 
@@ -45,26 +65,35 @@ export function SyncModal({ isOpen, onClose }: SyncModalProps) {
         // En desarrollo local, conectamos directo al backend (puerto 3000) para evitar 
         // que el proxy de Next.js (puerto 3001) bufferee la respuesta SSE.
         let streamUrl = `${apiUrl}/dashboard/sync-stream`;
-        if (typeof window !== "undefined" && window.location.hostname === "localhost" && window.location.port !== "3000") {
+
+        if (process.env.NODE_ENV === "development" &&
+            typeof window !== "undefined" &&
+            window.location.hostname === "localhost" &&
+            window.location.port !== "3000") {
             streamUrl = "http://localhost:3000/api/dashboard/sync-stream";
         }
 
         console.log("Conectando SSE a:", streamUrl);
         const eventSource = new EventSource(streamUrl);
+        eventSourceRef.current = eventSource;
+
+        resetTimeout(); // Start timeout
 
         const updateStep = (id: string, status: StepStatus, detail?: string) => {
             setSteps((prev) =>
                 prev.map((s) => (s.id === id ? { ...s, status, detail: detail || s.detail } : s))
             );
+            resetTimeout(); // Reset timeout on any progress
         };
 
         eventSource.onopen = () => {
-            // Conexión establecida
+            resetTimeout();
         };
 
         eventSource.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
+                resetTimeout(); // Reset timeout on any message
 
                 switch (data.step) {
                     case "start":
@@ -89,6 +118,7 @@ export function SyncModal({ isOpen, onClose }: SyncModalProps) {
 
                     case "complete":
                         setCompleted(true);
+                        if (timeoutRef.current) clearTimeout(timeoutRef.current);
                         eventSource.close();
                         setTimeout(() => {
                             window.location.reload();
@@ -97,6 +127,7 @@ export function SyncModal({ isOpen, onClose }: SyncModalProps) {
 
                     case "error":
                         setError(data.message);
+                        if (timeoutRef.current) clearTimeout(timeoutRef.current);
                         eventSource.close();
                         break;
                 }
@@ -105,13 +136,18 @@ export function SyncModal({ isOpen, onClose }: SyncModalProps) {
             }
         };
 
-        eventSource.onerror = () => {
+        eventSource.onerror = (e) => {
             // El servidor cerró la conexión o hubo un error de red
-            // No hacemos nada aquí porque el 'complete' ya maneja el cierre normal
+            console.error("SSE Error:", e);
+            if (!completed) {
+                setError("No se pudo conectar con el servidor de sincronización. Verifique que el backend esté corriendo.");
+                eventSource.close();
+            }
         };
 
         return () => {
             eventSource.close();
+            if (timeoutRef.current) clearTimeout(timeoutRef.current);
         };
     }, [isOpen]); // Removed 'completed' from dependencies to prevent double-trigger
 
@@ -187,8 +223,19 @@ export function SyncModal({ isOpen, onClose }: SyncModalProps) {
                     </div>
                 )}
 
-                {/* Close button only on error */}
-                {error && (
+                {/* Timeout warning */}
+                {timedOut && !completed && !error && (
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 flex items-start gap-3 mb-4">
+                        <XCircle className="h-5 w-5 shrink-0 mt-0.5" />
+                        <div className="text-sm">
+                            <p className="font-semibold">La sincronización está tardando más de lo esperado</p>
+                            <p>Puede que el servidor esté ocupado. Puedes cerrar y reintentar más tarde.</p>
+                        </div>
+                    </div>
+                )}
+
+                {/* Close button on error or timeout */}
+                {(error || timedOut) && (
                     <button
                         onClick={onClose}
                         className="w-full py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-colors"

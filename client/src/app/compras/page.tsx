@@ -478,9 +478,17 @@ export default function AnalisisPage() {
                                 <p className="text-sm text-indigo-800 mb-3">
                                     {algoritmoInfo?.description}
                                 </p>
-                                <div className="bg-white/60 rounded-lg p-3 border border-indigo-200">
+                                <div className="bg-white/60 rounded-lg p-3 border border-indigo-200 mb-3">
                                     <p className="text-xs font-mono text-indigo-700">
                                         <strong>Fórmula:</strong> {algoritmoInfo?.formula}
+                                    </p>
+                                </div>
+                                <div className="bg-white/60 rounded-lg p-3 border border-indigo-200">
+                                    <p className="text-sm text-indigo-800 mb-1">
+                                        <strong>¿Qué es la Cobertura Objetivo?</strong>
+                                    </p>
+                                    <p className="text-xs text-indigo-700">
+                                        Es la cantidad de meses de stock que deseas mantener en inventario. Si seleccionas <strong>{mesesCobertura} {mesesCobertura === 1 ? 'mes' : 'meses'}</strong>, el sistema calculará cuántas unidades necesitas para cubrir {mesesCobertura} {mesesCobertura === 1 ? 'mes' : 'meses'} de ventas promedio.
                                     </p>
                                 </div>
                                 {algoritmo === "PREDICCION" && (

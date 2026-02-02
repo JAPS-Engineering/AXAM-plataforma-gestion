@@ -12,27 +12,106 @@ require('dotenv').config();
 const { format, subDays, getYear, getMonth, startOfMonth, endOfMonth, eachDayOfInterval } = require('date-fns');
 const { getPrismaClient } = require('../prisma/client');
 const { logSection, logSuccess, logError, logWarning, logInfo } = require('../utils/logger');
-const { getDailySales, getMonthlySales, getCurrentStock, getAllProducts } = require('../services/salesService');
+const { getDailySales, getMonthlySales, getCurrentStock, getAllProducts, getWhiteListSKUs } = require('../services/salesService');
 
 const prisma = getPrismaClient();
 
 /**
- * Sincronizar productos desde el ERP (solo nuevos)
- */
-/**
- * Sincronizar productos desde el ERP (usando Filtro de Lista 652)
+ * Sincronizar productos desde el ERP (usando Prisma)
+ * Versión simplificada que usa el mismo cliente de base de datos que el resto de la app
  */
 async function syncNewProducts() {
-    logSection('SINCRONIZANDO PRODUCTOS (CON FILTRO LISTA 652)');
+    logSection('SINCRONIZANDO PRODUCTOS');
 
     try {
-        // Reutilizamos la lógica centralizada en syncProductos.js
-        // para asegurar que siempre se aplique el filtro de WhiteList
-        const { syncProductsWithFilter } = require('./syncProductos');
-        await syncProductsWithFilter();
+        // 1. Obtener productos del ERP
+        const erpProducts = await getAllProducts();
+        logInfo(`Obtenidos ${erpProducts.length} productos del ERP`);
 
-        // Retornamos dummy stats porque syncProductos ya loguea su propio detalle
-        return { created: 0, updated: 0 };
+        if (erpProducts.length === 0) {
+            logWarning('No se encontraron productos en el ERP');
+            return { created: 0, updated: 0 };
+        }
+
+        // 1.5 Filtrar por White List (Lista Mayorista ID 652)
+        const whiteList = await getWhiteListSKUs();
+        let productsToProcess = erpProducts;
+
+        if (whiteList) {
+            productsToProcess = erpProducts.filter(p => {
+                const sku = (p.codigo_prod || p.cod_producto || p.codigo || p.sku || '').trim();
+                return whiteList.has(sku);
+            });
+            logInfo(`Filtrado: ${productsToProcess.length} productos permitidos (de ${erpProducts.length})`);
+        }
+
+        let created = 0;
+        let updated = 0;
+
+        // 2. Obtener todos los productos existentes en DB para comparar en memoria
+        // Esto evita hacer un query por cada producto del ERP (N+1 problem)
+        const existingProducts = await prisma.producto.findMany({
+            select: { sku: true, descripcion: true, familia: true, proveedor: true }
+        });
+
+        const existingMap = new Map();
+        existingProducts.forEach(p => existingMap.set(p.sku, p));
+
+        logInfo(`Productos en DB local: ${existingProducts.length}`);
+
+        const updates = [];
+        const creates = [];
+
+        // 3. Comparar y preparar operaciones
+        for (const product of productsToProcess) {
+            const sku = (product.codigo_prod || product.cod_producto || product.codigo || product.sku || '').trim();
+            const descripcion = (product.nombre || product.descripcion || '').trim();
+            const familia = (product.familia || product.cod_familia || '').trim();
+            const proveedor = (product.proveedor || product.nombre_proveedor || '').trim();
+
+            if (!sku || !descripcion) continue;
+
+            const existing = existingMap.get(sku);
+
+            if (existing) {
+                // Actualizar solo si hay cambios en campos clave
+                if (existing.descripcion !== descripcion || existing.familia !== familia) {
+                    updates.push(prisma.producto.update({
+                        where: { sku },
+                        data: { descripcion, familia, proveedor }
+                    }));
+                }
+            } else {
+                // Crear nuevo producto
+                creates.push(prisma.producto.create({
+                    data: { sku, descripcion, familia, proveedor }
+                }));
+            }
+        }
+
+        // 4. Ejecutar operaciones en paralelo (por partes si son muchas)
+        // Usamos transacciones o Promise.all
+        if (creates.length > 0) {
+            logInfo(`Creando ${creates.length} nuevos productos...`);
+            // Batch create logic could be used here if supported, but simple loop is fine for now
+            // For safety with transaction limits, we process in chunks of 50
+            for (let i = 0; i < creates.length; i += 50) {
+                await Promise.all(creates.slice(i, i + 50));
+            }
+        }
+
+        if (updates.length > 0) {
+            logInfo(`Actualizando ${updates.length} productos...`);
+            for (let i = 0; i < updates.length; i += 50) {
+                await Promise.all(updates.slice(i, i + 50));
+            }
+        }
+
+        created = creates.length;
+        updated = updates.length;
+
+        logSuccess(`Productos: ${created} nuevos, ${updated} actualizados`);
+        return { created, updated };
 
     } catch (error) {
         logError(`Error sincronizando productos: ${error.message}`);
@@ -243,18 +322,34 @@ async function syncCurrentMonthData(includeToday = false) {
         let updated = 0;
         let productosConVentas = 0; // Contador para productos con ventas
 
+        // Optimización: Obtener todos los productos y vendedores en memoria
+        const allProducts = await prisma.producto.findMany({ select: { id: true, sku: true } });
+        const productMap = new Map(allProducts.map(p => [p.sku, p.id]));
+
+        // Optimización vendedores: Upsert solo si no existen (o caché simple)
+        // Obtenemos todos los vendedores activos para evitar upserts innecesarios
+        // (Aunque para asegurar nombres actualizados, upsert es mejor, pero costoso si son muchos pedidos)
+        // Asumimos que hay pocos vendedores (< 100). Hacemos un upsert masivo o cache.
+        const activeVendedores = new Set((await prisma.vendedor.findMany({ select: { codigo: true } })).map(v => v.codigo));
+
+        const ventasAInsertar = [];
+        const vendedoresVistos = new Set(); // Para no intentar upsert el mismo vendedor multiples veces en este loop
+
         for (const [key, data] of monthlySales) {
             const { sku, vendedor } = data;
-            const producto = await prisma.producto.findUnique({
-                where: { sku }
-            });
+            const productoId = productMap.get(sku);
 
-            if (!producto) continue;
+            if (!productoId) continue;
 
             const stockActual = stockMap.get(sku) || 0;
 
-            // Asegurar que el vendedor existe
-            if (vendedor) {
+            // Gestionar vendedor
+            if (vendedor && !vendedoresVistos.has(vendedor)) {
+                vendedoresVistos.add(vendedor);
+                // Solo hacemos upsert si es nuevo o para asegurar. 
+                // Dado el volumen bajo de vendedores, podemos hacer esto secuencial o Promise.all fuera del loop.
+                // Lo agregamos a una lista de promesas de vendedores?
+                // Simplificación: Upsert inmediato (son pocos) pero con catch
                 await prisma.vendedor.upsert({
                     where: { codigo: vendedor },
                     update: { activo: true },
@@ -262,39 +357,41 @@ async function syncCurrentMonthData(includeToday = false) {
                 });
             }
 
-            await prisma.ventaActual.create({
-                data: {
-                    productoId: producto.id,
-                    vendedor: vendedor || '',
-                    cantidadVendida: data.cantidad,
-                    stockActual: stockActual,
-                    montoNeto: data.montoNeto
-                }
+            ventasAInsertar.push({
+                productoId: productoId,
+                vendedor: vendedor || '',
+                cantidadVendida: data.cantidad,
+                stockActual: stockActual,
+                montoNeto: data.montoNeto
             });
-            updated++;
-            productosConVentas++; // Este producto SÍ tuvo ventas
+
+            // updated count will be the total length
+            productosConVentas++;
         }
 
         // También actualizar stock para productos sin ventas este mes (pero con stock)
         for (const [sku, stock] of stockMap) {
             if (monthlySales.has(sku)) continue; // Ya procesado
 
-            const producto = await prisma.producto.findUnique({
-                where: { sku }
-            });
+            const productoId = productMap.get(sku);
+            if (!productoId) continue;
 
-            if (!producto) continue;
-
-            await prisma.ventaActual.create({
-                data: {
-                    productoId: producto.id,
-                    cantidadVendida: 0,
-                    stockActual: stock,
-                    montoNeto: 0
-                }
+            ventasAInsertar.push({
+                productoId: productoId,
+                vendedor: '',
+                cantidadVendida: 0,
+                stockActual: stock,
+                montoNeto: 0
             });
-            updated++;
-            // No incrementar productosConVentas - estos NO tuvieron ventas
+        }
+
+        if (ventasAInsertar.length > 0) {
+            logInfo(`Insertando ${ventasAInsertar.length} registros en VentaActual...`);
+            // createMany es mucho más rápido
+            await prisma.ventaActual.createMany({
+                data: ventasAInsertar
+            });
+            updated = ventasAInsertar.length;
         }
 
         logSuccess(`VentaActual: ${updated} productos actualizados, ${productosConVentas} con ventas (hasta ${format(endDate, 'dd/MM/yyyy HH:mm')})`);

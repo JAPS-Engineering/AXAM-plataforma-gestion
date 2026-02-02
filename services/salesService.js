@@ -310,6 +310,51 @@ async function getCurrentStock() {
 /**
  * Obtener información de todos los productos
  */
+/**
+ * Obtener SKUs permitidos de la Lista Mayorista (ID 652)
+ */
+async function getWhiteListSKUs() {
+    try {
+        logInfo('Obteniendo Lista Mayorista (ID 652) para filtrar productos...');
+        const headers = await getAuthHeaders();
+        const url = `${ERP_BASE_URL}/pricelist/${RUT_EMPRESA}/?dets=1`;
+
+        const response = await axios.get(url, { headers, timeout: 60000 });
+        const data = response.data.data || response.data || [];
+
+        // Buscar lista 652
+        const targetList = data.find(l =>
+            String(l.codigo) === '652' ||
+            String(l.id) === '652' ||
+            String(l.cod_lista) === '652' ||
+            (l.descripcion && l.descripcion.includes('652'))
+        );
+
+        if (!targetList) {
+            logWarning('No se encontró la Lista de Precios 652. Se permitirá todo el catálogo (Warning).');
+            return null; // Retornar null para indicar que no hay filtro
+        }
+
+        const items = targetList.produtos || targetList.productos || targetList.detalles || targetList.items || targetList.products || [];
+        const skus = new Set();
+
+        items.forEach(item => {
+            const sku = item.codigo || item.sku || item.cod_articulo || item.cod;
+            if (sku) skus.add(sku.trim());
+        });
+
+        logSuccess(`✅ Lista Mayorista obtenida: ${skus.size} SKUs permitidos.`);
+        return skus;
+
+    } catch (error) {
+        logError(`Error obteniendo White List: ${error.message}`);
+        // Si falla, es mejor fallar seguro (no bloquear todo, o tal vez sí?) 
+        // El usuario quiere filtrar. Si falla la lista, mejor retornar null y loguear error, 
+        // o lanzar error si es crítico. Asumiremos crítico si el usuario lo pidió explícitamente.
+        throw error;
+    }
+}
+
 async function getAllProducts() {
     try {
         const headers = await getAuthHeaders();
@@ -344,5 +389,6 @@ module.exports = {
     getDailySales,
     getMonthlySales,
     getCurrentStock,
-    getAllProducts
+    getAllProducts,
+    getWhiteListSKUs
 };
