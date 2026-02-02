@@ -102,13 +102,9 @@ async function getVentasPorVendedor(req, res) {
             { OR: [{ ano: { lt: futureEndYear } }, { ano: futureEndYear, mes: { lte: futureEndMonth } }] }
         ];
 
-        // 1. Obtener Ventas Históricas
-        const filterHistorico = {
-            AND: [
-                ...historicalDateClause,
-                { OR: [{ ano: { lt: mesActual.ano } }, { ano: mesActual.ano, mes: { lt: mesActual.mes } }] }
-            ]
-        };
+        // 1. Obtener Ventas Históricas (incluye TODOS los meses en el rango, incluyendo el actual)
+        // NOTA: VentaActual ya no se usa después de los cambios de sincronización
+        const filterHistorico = { AND: [...historicalDateClause] };
 
         const ventasHistoricas = await prisma.ventaHistorica.groupBy({
             by: ['vendedor', 'mes', 'ano'],
@@ -116,105 +112,50 @@ async function getVentasPorVendedor(req, res) {
             _sum: { montoNeto: true }
         });
 
-        // 2. Obtener Ventas Actuales
-        let ventasActualesAgregadas = [];
-        const isCurrentInRange = (
-            (mesActual.ano > startYear || (mesActual.ano === startYear && mesActual.mes >= startMonth)) &&
-            (mesActual.ano < endYear || (mesActual.ano === endYear && mesActual.mes <= endMonth))
-        );
-
-        if (isCurrentInRange) {
-            const va = await prisma.ventaActual.groupBy({
-                by: ['vendedor'],
-                _sum: { montoNeto: true }
-            });
-            ventasActualesAgregadas = va.map(v => ({
-                vendedor: v.vendedor,
-                mes: mesActual.mes,
-                ano: mesActual.ano,
-                _sum: v._sum
-            }));
-        }
-
         // 3. Objetivos y Proyecciones (Usando rango extendido)
         const objetivos = await prisma.objetivoVenta.findMany({ where: { AND: extendedDateClause, tipo: 'VENDEDOR' } });
         const proyecciones = await prisma.proyeccionVenta.findMany({ where: { AND: extendedDateClause } });
 
         // --- CALCULAR ESTADÍSTICAS DEL MES ACTUAL (PARA KPIs SIEMPRE VISIBLES) ---
-        let currentMonthSales = 0;
-        let currentMonthTarget = 0;
-
-        // Venta actual total (Desde VentaActual model)
-        const vaTotal = await prisma.ventaActual.aggregate({
+        // NOTA: VentaActual ya no se usa, consultamos VentaHistorica para el mes actual
+        const currentSalesTotal = await prisma.ventaHistorica.aggregate({
+            where: { ano: mesActual.ano, mes: mesActual.mes },
             _sum: { montoNeto: true }
         });
-        currentMonthSales = vaTotal._sum.montoNeto || 0;
+        const currentMonthSales = currentSalesTotal._sum.montoNeto || 0;
 
         // Objetivo mes actual total
         const objActualTotal = await prisma.objetivoVenta.aggregate({
-            where: {
-                mes: mesActual.mes,
-                ano: mesActual.ano,
-                tipo: 'VENDEDOR'
-            },
+            where: { mes: mesActual.mes, ano: mesActual.ano, tipo: 'VENDEDOR' },
             _sum: { montoObjetivo: true }
         });
-        currentMonthTarget = objActualTotal._sum.montoObjetivo || 0;
+        const currentMonthTarget = objActualTotal._sum.montoObjetivo || 0;
 
-        // --- NUEVO: Obtener Ventas por Familia (Agrupado por Vendedor -> Familia) ---
+        // --- Obtener Ventas por Familia (Agrupado por Vendedor -> Familia) ---
+        // NOTA: VentaActual ya no se usa, consultamos solo VentaHistorica
         const familySalesPerSeller = {};
-
-        // Calcular índices de meses para filtrado más simple en SQL
-        // Formula: year * 12 + month
         const startIdx = startYear * 12 + startMonth;
         const endIdx = endYear * 12 + endMonth;
-        const currentIdx = mesActual.ano * 12 + mesActual.mes;
 
-        // Límite para histórico: hasta el mes anterior al actual (si cae dentro del rango)
-        const limitIdx = Math.min(endIdx, currentIdx - 1);
+        const familySalesResult = await prisma.$queryRaw`
+            SELECT 
+                vm.vendedor, 
+                p.familia, 
+                SUM(vm.monto_neto) as total
+            FROM ventas_mensuales vm
+            JOIN productos p ON vm.producto_id = p.id
+            WHERE 
+                (vm.ano * 12 + vm.mes) >= ${startIdx}
+                AND (vm.ano * 12 + vm.mes) <= ${endIdx}
+            GROUP BY vm.vendedor, p.familia
+        `;
 
-        // a. Ventas Históricas por Familia (Solo si el rango incluye meses pasados)
-        if (startIdx <= limitIdx) {
-            const historicFamily = await prisma.$queryRaw`
-                SELECT 
-                    vm.vendedor, 
-                    p.familia, 
-                    SUM(vm.monto_neto) as total
-                FROM ventas_mensuales vm
-                JOIN productos p ON vm.producto_id = p.id
-                WHERE 
-                    (vm.ano * 12 + vm.mes) >= ${startIdx}
-                    AND (vm.ano * 12 + vm.mes) <= ${limitIdx}
-                GROUP BY vm.vendedor, p.familia
-            `;
-
-            historicFamily.forEach(row => {
-                const vend = row.vendedor || 'SIN ASIGNAR';
-                if (!familySalesPerSeller[vend]) familySalesPerSeller[vend] = {};
-                const fam = row.familia || 'SIN FAMILIA';
-                familySalesPerSeller[vend][fam] = (familySalesPerSeller[vend][fam] || 0) + Number(row.total);
-            });
-        }
-
-        // b. Ventas Actuales por Familia (Solo si el rango incluye el mes actual)
-        if (isCurrentInRange) {
-            const currentFamily = await prisma.$queryRaw`
-                SELECT 
-                    va.vendedor, 
-                    p.familia, 
-                    SUM(va.monto_neto) as total
-                FROM ventas_actuales va
-                JOIN productos p ON va.producto_id = p.id
-                GROUP BY va.vendedor, p.familia
-            `;
-
-            currentFamily.forEach(row => {
-                const vend = row.vendedor || 'SIN ASIGNAR';
-                if (!familySalesPerSeller[vend]) familySalesPerSeller[vend] = {};
-                const fam = row.familia || 'SIN FAMILIA';
-                familySalesPerSeller[vend][fam] = (familySalesPerSeller[vend][fam] || 0) + Number(row.total);
-            });
-        }
+        familySalesResult.forEach(row => {
+            const vend = row.vendedor || 'SIN ASIGNAR';
+            if (!familySalesPerSeller[vend]) familySalesPerSeller[vend] = {};
+            const fam = row.familia || 'SIN FAMILIA';
+            familySalesPerSeller[vend][fam] = (familySalesPerSeller[vend][fam] || 0) + Number(row.total);
+        });
 
         // 4. Vendedores (Para apodos y estado oculto)
         const vList = await prisma.vendedor.findMany();
@@ -231,7 +172,7 @@ async function getVentasPorVendedor(req, res) {
         const resProyecciones = {};
         const marketShareData = {};
 
-        const allSales = [...ventasHistoricas, ...ventasActualesAgregadas];
+        const allSales = ventasHistoricas;
         allSales.forEach(v => {
             if (!resVentas[v.vendedor]) resVentas[v.vendedor] = {};
             const key = `${v.ano}-${String(v.mes).padStart(2, '0')}`;

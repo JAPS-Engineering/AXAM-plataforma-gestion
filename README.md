@@ -44,10 +44,15 @@ npm run sync:productos
 
 ### Sincronizar Ventas
 
-Obtiene todas las FAVEs desde enero 2025, calcula las ventas por producto y mes, y las guarda en la base de datos:
+Obtiene todas las ventas (FAVE + GDVE + BOVE + NCVE) desde **enero 2021**, calcula las ventas por producto y mes, y las guarda en la base de datos:
 
 ```bash
 npm run sync:ventas
+```
+
+Para ejecutarlo dentro del contenedor Docker:
+```bash
+docker-compose exec axam-dashboard npm run sync:ventas
 ```
 
 ### Sincronizar Stock

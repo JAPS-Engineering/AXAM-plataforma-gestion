@@ -21,7 +21,7 @@ const DOCUMENT_TYPES = ["FAVE", "BOVE", "NCVE", "GDVE"];
  * Obtener documentos de venta de un tipo específico para un rango de fechas
  * Usa details=1 para obtener los productos en una sola llamada (optimización clave)
  */
-async function getDocumentsByType(docType, fechaInicio, fechaFin) {
+async function getDocumentsByType(docType, fechaInicio, fechaFin, attempt = 1) {
     try {
         const headers = await getAuthHeaders();
 
@@ -45,18 +45,30 @@ async function getDocumentsByType(docType, fechaInicio, fechaFin) {
         return documents;
 
     } catch (error) {
-        if (error.response?.status === 429) {
-            const retryAfter = error.response?.data?.retry || 10;
-            logWarning(`Rate limit en ${docType}, esperando ${retryAfter}s...`);
-            await new Promise(resolve => setTimeout(resolve, (retryAfter + 1) * 1000));
-            return getDocumentsByType(docType, fechaInicio, fechaFin); // Reintentar
+        const retryDelay = Math.pow(2, attempt) * 1000; // Exponential backoff: 2s, 4s, 8s...
+        const maxAttempts = 5;
+        const isNetworkError =
+            error.code === 'EAI_AGAIN' ||
+            error.code === 'ECONNRESET' ||
+            error.code === 'ETIMEDOUT' ||
+            (error.message && error.message.includes('socket hang up'));
+
+        if (attempt <= maxAttempts && (isNetworkError || error.response?.status === 429)) {
+
+            const reason = isNetworkError ? `Error de red (${error.code || error.message})` : 'Rate limit';
+            logWarning(`⚠️  ${docType}: ${reason}. Reintentando intento ${attempt}/${maxAttempts} en ${retryDelay / 1000}s...`);
+
+            await new Promise(resolve => setTimeout(resolve, retryDelay));
+            return getDocumentsByType(docType, fechaInicio, fechaFin, attempt + 1);
         }
+
         // Algunos tipos pueden no existir o no tener docs, no es necesariamente error fatal
         if (error.response?.status === 400 || error.response?.status === 404) {
             logWarning(`No se encontraron documentos ${docType} o endpoint no válido.`);
             return [];
         }
-        logError(`Error al obtener ${docType}: ${error.message}`);
+
+        logError(`Error al obtener ${docType} (intento ${attempt}): ${error.message}`);
         throw error;
     }
 }
@@ -74,13 +86,13 @@ function isFaveRefToGuide(doc) {
         if (hasGuideRef) return true;
     }
 
-    // 2. Revisar Glosa (fallback común)
-    if (doc.glosa) {
-        const glosa = doc.glosa.toUpperCase();
-        // Patrones comunes: "SEGÚN GUÍA", "REF GD", "GDVE", "GUIA DE DESPACHO"
-        if (glosa.includes('GUIA') || glosa.includes('GD') || glosa.includes('DESPACHO')) {
-            return true;
-        }
+    // 2. Revisar Glosa y Glosa Encabezado (fallback común)
+    // El API suele devolver "glosa_enc" en lugar de "glosa"
+    const glosa = (doc.glosa || doc.glosa_enc || '').toUpperCase();
+
+    // Patrones comunes: "SEGÚN GUÍA", "REF GD", "GDVE", "GUIA DE DESPACHO"
+    if (glosa.includes('GUIA') || glosa.includes('GD') || glosa.includes('DESPACHO')) {
+        return true;
     }
 
     return false;
@@ -118,6 +130,9 @@ async function getAllSales(fechaInicio, fechaFin) {
             if (result.type === 'FAVE') {
                 if (isFaveRefToGuide(doc)) {
                     favesSkipped++;
+                    // Loguear para verificar qué se está omitiendo
+                    const glosa = doc.glosa || doc.glosa_enc || 'Sin glosa';
+                    logInfo(`  ⏭️  Saltando FAVE ${doc.folio} (Referencia a Guía detectada en: "${glosa.substring(0, 50)}...")`);
                     continue; // Saltar esta factura, ya contamos la GDVE
                 }
             }

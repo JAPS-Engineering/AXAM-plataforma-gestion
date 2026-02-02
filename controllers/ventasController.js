@@ -121,19 +121,10 @@ async function getVentasResumen(req, res) {
             { OR: [{ ano: { lt: endYear } }, { ano: endYear, mes: { lte: endMonth } }] }
         ];
 
-        const mesActual = getMesActual(); // { ano, mes }
-
-        // Filtro para Histórica (EXCLUYE mes actual)
+        // Filtro para VentaHistorica (incluye TODOS los meses en el rango, incluyendo el actual)
+        // NOTA: VentaActual ya no se usa después de los cambios de sincronización
         const filterHistorico = {
-            AND: [
-                ...baseDateClause,
-                {
-                    OR: [
-                        { ano: { lt: mesActual.ano } },
-                        { ano: mesActual.ano, mes: { lt: mesActual.mes } }
-                    ]
-                }
-            ]
+            AND: [...baseDateClause]
         };
 
         if (marca) {
@@ -142,7 +133,7 @@ async function getVentasResumen(req, res) {
             });
         }
 
-        // 1. Obtener Ventas Históricas (Agregado por mes)
+        // 1. Obtener Ventas Históricas (Agregado por mes) - Incluye mes actual
         const ventasPorMes = await prisma.ventaHistorica.groupBy({
             by: ['ano', 'mes'],
             _sum: { montoNeto: true, cantidadVendida: true },
@@ -150,58 +141,14 @@ async function getVentasResumen(req, res) {
             orderBy: [{ ano: 'asc' }, { mes: 'asc' }]
         });
 
-        // 2. Obtener Ventas Mes Actual (si está en el rango)
-        const isCurrentMonthInRange = (
-            (mesActual.ano > startYear || (mesActual.ano === startYear && mesActual.mes >= startMonth)) &&
-            (mesActual.ano < endYear || (mesActual.ano === endYear && mesActual.mes <= endMonth))
-        );
-
-        if (isCurrentMonthInRange) {
-            const whereActual = {};
-            if (marca) {
-                whereActual.producto = { sku: { startsWith: marca.toUpperCase() } };
-            }
-
-            const currentMonthSales = await prisma.ventaActual.aggregate({
-                _sum: { montoNeto: true, cantidadVendida: true },
-                where: whereActual
-            });
-
-            if (currentMonthSales._sum.montoNeto || currentMonthSales._sum.cantidadVendida) {
-                ventasPorMes.push({
-                    ano: mesActual.ano,
-                    mes: mesActual.mes,
-                    _sum: {
-                        montoNeto: currentMonthSales._sum.montoNeto || 0,
-                        cantidadVendida: currentMonthSales._sum.cantidadVendida || 0
-                    }
-                });
-            }
-        }
-
-        // 3. Top Productos (Combinando fuentes si es necesario)
-        // Por simplicidad para el Top 10, si el rango incluye el mes actual, 
-        // priorizamos la histórica pero para reportes de un solo mes (Mes Actual)
-        // debemos usar VentaActual.
-
-        let topProductos;
-        if (monthsCount === 1 && isCurrentMonthInRange) {
-            topProductos = await prisma.ventaActual.groupBy({
-                by: ['productoId'],
-                _sum: { montoNeto: true, cantidadVendida: true },
-                where: marca ? { producto: { sku: { startsWith: marca.toUpperCase() } } } : {},
-                orderBy: { _sum: { montoNeto: 'desc' } },
-                take: 10
-            });
-        } else {
-            topProductos = await prisma.ventaHistorica.groupBy({
-                by: ['productoId'],
-                _sum: { montoNeto: true, cantidadVendida: true },
-                where: filterHistorico,
-                orderBy: { _sum: { montoNeto: 'desc' } },
-                take: 10
-            });
-        }
+        // 2. Top Productos (siempre desde VentaHistorica)
+        const topProductos = await prisma.ventaHistorica.groupBy({
+            by: ['productoId'],
+            _sum: { montoNeto: true, cantidadVendida: true },
+            where: filterHistorico,
+            orderBy: { _sum: { montoNeto: 'desc' } },
+            take: 10
+        });
 
         const productosInfo = await prisma.producto.findMany({
             where: { id: { in: topProductos.map(p => p.productoId) } },
@@ -385,23 +332,22 @@ async function getVentasTendencias(req, res) {
     try {
         const { marca } = req.query;
         const { startYear, startMonth, endYear, endMonth, monthsCount, monthsArray } = parseDateParams(req.query);
-        const mesActual = getMesActual();
 
-        // 1. Histórica (Excluyendo Mes Actual para evitar duplicados o datos viejos)
-        let dateFilterSqlHistorico = `
+        // 1. VentaHistorica - incluye TODOS los meses en el rango (incluyendo el actual)
+        // NOTA: VentaActual ya no se usa después de los cambios de sincronización
+        let dateFilterSql = `
             AND (
                 (v.ano > ${startYear} OR (v.ano = ${startYear} AND v.mes >= ${startMonth}))
                 AND
                 (v.ano < ${endYear} OR (v.ano = ${endYear} AND v.mes <= ${endMonth}))
             )
-            AND (v.ano < ${mesActual.ano} OR (v.ano = ${mesActual.ano} AND v.mes < ${mesActual.mes}))
         `;
 
         if (marca) {
-            dateFilterSqlHistorico += ` AND p.sku LIKE '${marca.toUpperCase()}%' `;
+            dateFilterSql += ` AND p.sku LIKE '${marca.toUpperCase()}%' `;
         }
 
-        const tendenciasHistoricasResult = await prisma.$queryRawUnsafe(`
+        const tendenciasResult = await prisma.$queryRawUnsafe(`
             SELECT 
                 v.ano, v.mes,
                 CASE WHEN p.familia IS NULL OR p.familia = '' THEN 'Sin Familia' ELSE p.familia END as familia,
@@ -409,32 +355,9 @@ async function getVentasTendencias(req, res) {
                 SUM(v.cantidad_vendida) as totalCantidad
             FROM ventas_mensuales v
             JOIN productos p ON v.producto_id = p.id
-            WHERE 1=1 ${dateFilterSqlHistorico}
+            WHERE 1=1 ${dateFilterSql}
             GROUP BY v.ano, v.mes, familia
         `);
-
-        // 2. Mes Actual (si está en el rango solicitado)
-        let tendenciasActualesResult = [];
-        const isCurrentMonthInRange = (
-            (mesActual.ano > startYear || (mesActual.ano === startYear && mesActual.mes >= startMonth)) &&
-            (mesActual.ano < endYear || (mesActual.ano === endYear && mesActual.mes <= endMonth))
-        );
-
-        if (isCurrentMonthInRange) {
-            let filterMarcaActual = marca ? ` AND p.sku LIKE '${marca.toUpperCase()}%' ` : '';
-            tendenciasActualesResult = await prisma.$queryRawUnsafe(`
-                SELECT 
-                    ${mesActual.ano} as ano,
-                    ${mesActual.mes} as mes,
-                    CASE WHEN p.familia IS NULL OR p.familia = '' THEN 'Sin Familia' ELSE p.familia END as familia,
-                    SUM(v.monto_neto) as totalMonto,
-                    SUM(v.cantidad_vendida) as totalCantidad
-                FROM ventas_actuales v
-                JOIN productos p ON v.producto_id = p.id
-                WHERE 1=1 ${filterMarcaActual}
-                GROUP BY familia
-            `);
-        }
 
         const formatBigInt = (items) => items.map(item => ({
             ano: Number(item.ano),
@@ -444,12 +367,11 @@ async function getVentasTendencias(req, res) {
             totalCantidad: Number(item.totalCantidad || 0)
         }));
 
-        // 4. Mapeo de Vendedores (Para que el frontend reciba nombres reales si los necesita en el futuro)
-        // Por ahora Tendencias agrupa por Familia, pero si agregamos vista por vendedor:
+        // 2. Mapeo de Vendedores (Para que el frontend reciba nombres reales si los necesita en el futuro)
         const vendedoresInfo = await prisma.vendedor.findMany({ where: { activo: true } });
         const nicknameMap = new Map(vendedoresInfo.map(v => [v.codigo, v.nombre || v.codigo]));
 
-        const rawData = [...formatBigInt(tendenciasHistoricasResult), ...formatBigInt(tendenciasActualesResult)];
+        const rawData = formatBigInt(tendenciasResult);
 
         const pivotData = monthsArray.map(m => {
             const monthData = { label: m.label, ano: m.ano, mes: m.mes, totalMonto: 0, totalCantidad: 0 };
