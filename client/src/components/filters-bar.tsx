@@ -17,9 +17,9 @@ export const STATUS_OPTIONS: { value: StockStatus; label: string; color: string 
 // Función para calcular el estado de un producto
 export function calculateProductStatus(stock: number, promedio: number, sugerido: number): StockStatus {
     if (sugerido < 0) return "overstock";
-    // Caso especial: si promedio es 0 y stock es 0, retornar "healthy" (Ok)
-    // ya que no hay nada sugerido y el promedio es 0, todo está en orden
-    if (promedio === 0 && stock === 0) return "healthy";
+    // Caso especial: si sugerido es 0 y promedio es 0, retornar "healthy" (Ok)
+    // ya que no hay demanda histórica ni necesidad de compra
+    if (sugerido === 0 && promedio === 0) return "healthy";
     const ratio = promedio > 0 ? stock / promedio : stock > 0 ? Infinity : 0;
     if (ratio < 0.5) return "critical";
     if (ratio < 1) return "warning";
@@ -170,6 +170,8 @@ interface FiltersBarProps {
     hidePeriodSelector?: boolean;
     salesStatus: 'all' | 'with_sales' | 'without_sales';
     onSalesStatusChange: (value: 'all' | 'with_sales' | 'without_sales') => void;
+    soloBajoMinimo?: boolean;
+    onSoloBajoMinimoChange?: (value: boolean) => void;
 }
 
 export function FiltersBar(props: FiltersBarProps) {
@@ -188,6 +190,8 @@ export function FiltersBar(props: FiltersBarProps) {
         className,
         salesStatus,
         onSalesStatusChange,
+        soloBajoMinimo,
+        onSoloBajoMinimoChange,
     } = props;
 
     return (
@@ -240,32 +244,7 @@ export function FiltersBar(props: FiltersBarProps) {
                     </div>
                 )}
 
-                {/* Búsqueda */}
-                <div className="flex flex-col gap-1 flex-1 min-w-[200px] max-w-md">
-                    <label htmlFor="busqueda" className="text-xs font-medium text-slate-500">
-                        Buscar
-                    </label>
-                    <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                        <input
-                            id="busqueda"
-                            type="text"
-                            value={busqueda}
-                            onChange={(e) => onBusquedaChange(e.target.value)}
-                            placeholder="SKU, descripción o familia..."
-                            className="w-full pl-10 pr-10 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                        {busqueda && (
-                            <button
-                                onClick={() => onBusquedaChange("")}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                            >
-                                <X className="h-4 w-4" />
-                            </button>
-                        )}
-                    </div>
-                </div>
-
+                {/* Solo Bajo Mínimo Checkbox */}
                 {/* Filtro de Ventas */}
                 <div className="flex flex-col gap-1">
                     <label htmlFor="salesStatus" className="text-xs font-medium text-slate-500">
@@ -282,6 +261,32 @@ export function FiltersBar(props: FiltersBarProps) {
                         <option value="without_sales">Sin Ventas</option>
                     </select>
                 </div>
+
+                {/* Solo Bajo Mínimo Toggle */}
+                {onSoloBajoMinimoChange && (
+                    <div className="flex flex-col gap-1">
+                        <span className="text-xs font-medium text-transparent select-none">
+                            Filtro
+                        </span>
+                        <button
+                            onClick={() => onSoloBajoMinimoChange(!soloBajoMinimo)}
+                            className={cn(
+                                "flex items-center gap-2 px-3 py-2 text-sm font-medium border rounded-lg transition-all shadow-sm whitespace-nowrap",
+                                soloBajoMinimo
+                                    ? "bg-red-50 text-red-700 border-red-200 ring-1 ring-red-200"
+                                    : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300"
+                            )}
+                        >
+                            <div className={cn(
+                                "h-4 w-4 rounded border flex items-center justify-center transition-colors",
+                                soloBajoMinimo ? "bg-red-600 border-red-600" : "border-slate-400 bg-white"
+                            )}>
+                                {soloBajoMinimo && <Check className="h-3 w-3 text-white" />}
+                            </div>
+                            <span>Solo bajo mínimo</span>
+                        </button>
+                    </div>
+                )}
 
 
 

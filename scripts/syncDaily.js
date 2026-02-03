@@ -581,7 +581,7 @@ async function main() {
             break;
 
         case 'current':
-            await syncCurrentMonthData();
+            await syncCurrentMonthData(true); // Include today for manual sync
             break;
 
         case 'products':

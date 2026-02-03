@@ -9,7 +9,7 @@ import { FiltersBar, StockStatus, calculateProductStatus } from "@/components/fi
 import { ProductTable } from "@/components/product-table";
 import { Pagination } from "@/components/pagination";
 import { SyncModal } from "@/components/sync-modal";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Package, TrendingUp, AlertTriangle, ShoppingCart, Download, FileText, Database } from "lucide-react";
 import { PendingShipmentsSync } from "@/components/pending-shipments-sync";
 
@@ -26,6 +26,7 @@ export default function DashboardPage() {
 
   const [salesStatus, setSalesStatus] = useState<'all' | 'with_sales' | 'without_sales'>('all');
   const [estadosSeleccionados, setEstadosSeleccionados] = useState<StockStatus[]>([]);
+  const [soloBajoMinimo, setSoloBajoMinimo] = useState(false);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -39,6 +40,15 @@ export default function DashboardPage() {
     queryKey: ["dashboard", meses, marca],
     queryFn: () => fetchDashboard(meses, marca || undefined),
   });
+
+  // Refetch on window focus (fix for sync issue)
+  useEffect(() => {
+    const onFocus = () => {
+      refetch();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [refetch]);
 
   // Reset mutation
   const resetMutation = useMutation({
@@ -121,6 +131,11 @@ export default function DashboardPage() {
 
     let result = data.productos;
 
+    // Filter by "Solo bajo mínimo" (Priority filter)
+    if (soloBajoMinimo) {
+      result = result.filter(p => p.bajoMinimo === true);
+    }
+
     // Search filter
     if (busqueda.trim()) {
       const term = busqueda.toLowerCase();
@@ -151,7 +166,7 @@ export default function DashboardPage() {
     }
 
     return result;
-  }, [data?.productos, busqueda, salesStatus, estadosSeleccionados]);
+  }, [data?.productos, busqueda, salesStatus, estadosSeleccionados, soloBajoMinimo]);
 
   // Paginated products
   const { paginatedProducts, totalPages } = useMemo(() => {
@@ -324,6 +339,8 @@ export default function DashboardPage() {
             onSalesStatusChange={handleFilterChange(setSalesStatus)}
             estadosSeleccionados={estadosSeleccionados}
             onEstadosChange={handleFilterChange(setEstadosSeleccionados)}
+            soloBajoMinimo={soloBajoMinimo}
+            onSoloBajoMinimoChange={handleFilterChange(setSoloBajoMinimo)}
             totalProductos={data?.productos?.length || 0}
             productosVisibles={productosFiltered.length}
             className="mb-4"

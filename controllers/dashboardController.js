@@ -133,12 +133,15 @@ async function getDashboard(req, res) {
         // Procesar y calcular datos del dashboard
         const rows = productosDB.map(producto => {
             const ventasHistoricas = producto.ventasHistoricas || [];
-            const ventaActualDB = producto.ventasActuales?.[0] || null;
+            const ventasActualesDB = producto.ventasActuales || [];
             const pedidoActual = producto.pedidos?.[0] || null;
 
             // Datos DB (hasta ayer)
-            let cantidadMesActual = ventaActualDB?.cantidadVendida || 0;
-            const stockActual = ventaActualDB?.stockActual || 0;
+            // Sumar ventas de TODOS los vendedores para este producto
+            let cantidadMesActual = ventasActualesDB.reduce((sum, v) => sum + (v.cantidadVendida || 0), 0);
+
+            // Stock es global por SKU, así que tomamos el de cualquiera de los registros (o 0 si no hay)
+            const stockActual = ventasActualesDB.length > 0 ? ventasActualesDB[0].stockActual : 0;
             const stockMinimo = producto.stockMinimo; // Puede ser null
 
             // Sumar ventas live de HOY
