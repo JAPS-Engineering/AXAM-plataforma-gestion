@@ -6,6 +6,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const cron = require('node-cron');
 const { logInfo, logSuccess, logError } = require('./utils/logger');
 const { necesitaRotacion, ejecutarRotacionCompleta } = require('./services/rotacionService');
@@ -65,13 +66,31 @@ if (isProduction) {
 
     app.use(express.static(staticDir, { extensions: ['html'] }));
 
-    // Fallback para SPA (Single Page Application)
-    // Cualquier ruta no manejada por API devuelve index.html
-    // Usamos app.use como fallback universal (funciona en Express 4 y 5)
+    // Fallback para rutas de Next.js (static export)
+    // Busca el archivo HTML correspondiente a la ruta solicitada
+    // Por ejemplo: /ventas/graficos → /ventas/graficos.html
     app.use((req, res) => {
-        // Solo servir index.html para peticiones GET o HEAD, para otras devolver 404
+        // Solo servir archivos HTML para peticiones GET o HEAD
         if (req.method === 'GET' || req.method === 'HEAD') {
-            res.sendFile(path.join(staticDir, 'index.html'));
+            const urlPath = req.path === '/' ? '/index' : req.path;
+
+            // Remover trailing slash si existe
+            const cleanPath = urlPath.endsWith('/') ? urlPath.slice(0, -1) : urlPath;
+
+            // Intentar encontrar el archivo HTML correspondiente
+            const htmlFilePath = path.join(staticDir, `${cleanPath}.html`);
+            const indexFilePath = path.join(staticDir, cleanPath, 'index.html');
+
+            if (fs.existsSync(htmlFilePath)) {
+                // Archivo .html encontrado (ej: /ventas/graficos.html)
+                res.sendFile(htmlFilePath);
+            } else if (fs.existsSync(indexFilePath)) {
+                // Archivo index.html en subdirectorio (ej: /ventas/graficos/index.html)
+                res.sendFile(indexFilePath);
+            } else {
+                // Fallback a index.html para rutas no encontradas
+                res.sendFile(path.join(staticDir, 'index.html'));
+            }
         } else {
             res.status(404).json({ error: 'Ruta no encontrada' });
         }
