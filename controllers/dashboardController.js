@@ -15,6 +15,7 @@ const { subMonths, getYear, getMonth, format } = require('date-fns');
 const { getChileDate } = require('../utils/timezone');
 const { getAllSales, aggregateSalesByProduct } = require('../services/salesService');
 const { syncYesterday, syncNewProducts, syncDaySales, syncCurrentMonthData } = require('../scripts/syncDaily');
+const { syncCurrentMonth: syncComprasCurrentMonth } = require('../scripts/syncCompras');
 const { subDays } = require('date-fns');
 const { registrarSync, getSyncLogs } = require('../services/syncLogService');
 
@@ -442,6 +443,21 @@ async function syncStream(req, res) {
             productos: dataStats.updated || 0,
             productosConVentas: dataStats.productosConVentas || 0  // Productos con ventas del mes
         }, `Sincronización manual desde dashboard`);
+
+        // 3. Compras del mes actual
+        sendEvent({ step: 'purchases', message: 'Sincronizando compras del mes actual...' });
+        try {
+            const comprasStats = await syncComprasCurrentMonth();
+            sendEvent({
+                step: 'purchases_done',
+                message: `${comprasStats.processed} compras, ${comprasStats.updated} costos actualizados`
+            });
+        } catch (comprasError) {
+            sendEvent({
+                step: 'purchases_warning',
+                message: `Compras: ${comprasError.message}`
+            });
+        }
 
         sendEvent({ step: 'complete', message: '¡Sincronización finalizada!' });
         res.end();

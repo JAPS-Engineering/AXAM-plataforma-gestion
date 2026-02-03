@@ -41,7 +41,9 @@ const targetRoutes = require('./routes/targets');
 const syncRoutes = require('./routes/sync');
 const vendedoresRoutes = require('./routes/vendedores');
 const notificationsRoutes = require('./routes/notifications');
+const comprasHistorialRoutes = require('./routes/comprasHistorial');
 const { ejecutarAlertaStockBajo } = require('./scripts/alertaStockBajo');
+const { syncYesterday: syncComprasYesterday } = require('./scripts/syncCompras');
 
 app.use('/api/productos', productosRoutes);
 app.use('/api/pedidos', pedidosRoutes);
@@ -52,6 +54,7 @@ app.use('/api/ventas', ventasRoutes);
 app.use('/api/targets', targetRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/api/vendedores', vendedoresRoutes);
+app.use('/api/compras', comprasHistorialRoutes);
 app.use('/api/notifications', notificationsRoutes);
 
 // Ruta de salud
@@ -184,8 +187,13 @@ async function startServer() {
         cron.schedule('0 1 * * *', async () => {
             logInfo('⏰ Ejecutando sincronización diaria programada (01:00 AM)...');
             try {
+                // Sincronizar ventas del día anterior
                 await syncYesterday();
-                logSuccess('✅ Sincronización diaria programada completada');
+                logSuccess('✅ Sincronización de ventas completada');
+
+                // Sincronizar compras del día anterior
+                await syncComprasYesterday();
+                logSuccess('✅ Sincronización de compras completada');
             } catch (error) {
                 logError(`❌ Error en sincronización diaria programada: ${error.message}`);
             }
@@ -203,7 +211,7 @@ async function startServer() {
         }, { timezone: 'America/Santiago' });
 
         logInfo('🕒 Tareas CRON programadas:');
-        logInfo('   - Sincronización diaria: 01:00 AM (Chile)');
+        logInfo('   - Sincronización diaria (ventas + compras): 01:00 AM (Chile)');
         logInfo('   - Alerta stock bajo: 17:00 PM (Chile)');
 
         const server = app.listen(PORT, () => {

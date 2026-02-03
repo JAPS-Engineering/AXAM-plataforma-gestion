@@ -1,193 +1,362 @@
 /**
- * Script para sincronizar COMPRAS (FACE) e Histórico de Precios
+ * Script de sincronización de compras históricas (FACE)
  * 
- * Lógica:
- * 1. Obtiene Facturas de Compra (FACE) desde el ERP.
- * 2. Guarda el registro en CompraHistorica (para análisis de evolución de precios).
- * 3. Actualiza el costo actual en la ficha del Producto (precioUltimaCompra).
+ * Sincroniza Facturas de Compra para mantener:
+ * - Historial de precios de compra por producto
+ * - Costo de última compra actualizado en Producto
+ * 
+ * Uso: node scripts/syncCompras.js [comando] [opciones]
+ * 
+ * Comandos:
+ *   full, 2021        - Sincronización completa desde enero 2021
+ *   init [N]          - Sincronización de últimos N meses (defecto: 12)
+ *   month [año] [mes] - Sincronizar un mes específico
+ *   current           - Sincronizar solo el mes actual
+ *   yesterday         - Sincronizar solo el día anterior (para CRON diario)
  */
 
 require('dotenv').config();
-const { format, startOfMonth, endOfMonth, getYear, getMonth, isAfter, subMonths, parseISO, isValid } = require('date-fns');
+const { format, subDays, eachDayOfInterval, startOfMonth, endOfMonth } = require('date-fns');
 const { getPrismaClient } = require('../prisma/client');
 const { logSection, logSuccess, logError, logWarning, logInfo } = require('../utils/logger');
-// Reutilizamos el servicio genérico que ya soporta FACE
-const { getAllDocuments, getDocumentDetails } = require('../services/faveService');
-const { extractProductosFromFAVE } = require('../services/productExtractor'); // Sirve también para FACE
+const { getMonthlyPurchases, getDailyPurchases, getAllPurchases } = require('../services/purchaseService');
+const { getWhiteListSKUs } = require('../services/salesService');
 
 const prisma = getPrismaClient();
 
-// Fecha inicio defecto (1 año atrás o lo que el usuario pida)
-const FECHA_INICIO_DEFECTO = subMonths(new Date(), 12);
-
 /**
- * Procesa un lote de Facturas de Compra
+ * Procesar compras y guardar en base de datos
+ * @param {Array} products - Lista de productos comprados
+ * @param {number} year - Año para el SyncLog
+ * @param {number} month - Mes para el SyncLog
  */
-async function processFACEs(faces) {
-    let procesadas = 0;
-    let productosActualizados = 0;
-    let comprasGuardadas = 0;
-    let errores = 0;
+async function processPurchases(products, year, month) {
+    if (!products || products.length === 0) {
+        logInfo('No hay compras para procesar');
+        return { processed: 0, updated: 0 };
+    }
 
-    // Mapa para trackear el precio más reciente por producto en este lote
-    // SKU -> { precio, fecha, proveedor }
-    const ultimosPrecios = new Map();
+    // Obtener White List para filtrar
+    let whiteList = null;
+    try {
+        whiteList = await getWhiteListSKUs();
+    } catch (error) {
+        logWarning('No se pudo obtener White List, procesando todos los productos');
+    }
 
-    for (const doc of faces) {
-        try {
-            // Obtener detalles si no vienen
-            let fullDoc = doc;
-            if (!doc.detalles) {
-                // Aumentamos reintentos a 5 puesto que hacemos muchas peticiones seguidas
-                fullDoc = await getDocumentDetails('FACE', doc, 5);
-            }
+    // Filtrar por White List si existe
+    let filteredProducts = products;
+    if (whiteList) {
+        filteredProducts = products.filter(p => whiteList.has(p.sku));
+        logInfo(`Filtrado: ${filteredProducts.length} compras de productos permitidos (de ${products.length})`);
+    }
 
-            if (!fullDoc) {
-                errores++;
-                continue;
-            }
+    // Obtener mapa de SKU -> productoId
+    const skus = [...new Set(filteredProducts.map(p => p.sku))];
+    const existingProducts = await prisma.producto.findMany({
+        where: { sku: { in: skus } },
+        select: { id: true, sku: true, precioUltimaCompra: true, fechaUltimaCompra: true }
+    });
 
-            const fechaDocStr = fullDoc.fecha_doc || fullDoc.fecha;
-            const fechaDoc = parseISO(fechaDocStr);
-            if (!isValid(fechaDoc)) {
-                logWarning(`  ⚠️ Fecha inválida en FACE ${fullDoc.folio}: ${fechaDocStr}`);
-                continue;
-            }
+    const skuToProduct = new Map();
+    existingProducts.forEach(p => skuToProduct.set(p.sku, p));
 
-            const proveedor = fullDoc.razon_social || fullDoc.nombre_cliente || 'Proveedor Desconocido';
-            const rutProveedor = fullDoc.rut_proveedor || fullDoc.rut_cliente || '';
+    let processed = 0;
+    let updated = 0;
+    const productsToUpdateCost = new Map(); // sku -> { precio, fecha }
 
-            // Extraer items
-            // Usamos extractProductosFromFAVE porque la estructura de detalles es igual
-            const items = extractProductosFromFAVE(fullDoc);
-
-            if (items.length > 0) {
-                for (const item of items) {
-                    // 1. Buscar ID de producto (si existe en nuestra BD)
-                    const producto = await prisma.producto.findUnique({
-                        where: { sku: item.sku }
-                    });
-
-                    if (producto) { // Solo procesamos si el producto existe en nuestra BD (Whitelist)
-
-                        // 2. Guardar en Histórico
-                        // Verificamos si ya existe para evitar duplicados exactos (opcional, pero buena práctica)
-                        const exists = await prisma.compraHistorica.findFirst({
-                            where: {
-                                productoId: producto.id,
-                                fecha: fechaDoc,
-                                folio: String(fullDoc.folio)
-                            }
-                        });
-
-                        if (!exists) {
-                            await prisma.compraHistorica.create({
-                                data: {
-                                    productoId: producto.id,
-                                    fecha: fechaDoc,
-                                    cantidad: item.cantidad,
-                                    precioUnitario: item.montoNeto / item.cantidad, // Calcular unitario real
-                                    proveedor: proveedor,
-                                    rutProveedor: rutProveedor,
-                                    folio: String(fullDoc.folio)
-                                }
-                            });
-                            comprasGuardadas++;
-                        }
-
-                        // 3. Trackear para actualizar "Último Precio"
-                        // Si este documento es más reciente que lo que tenemos en memoria para este lote...
-                        const currentBest = ultimosPrecios.get(item.sku);
-                        if (!currentBest || isAfter(fechaDoc, currentBest.fecha)) {
-                            ultimosPrecios.set(item.sku, {
-                                precio: item.montoNeto / item.cantidad,
-                                fecha: fechaDoc,
-                                id: producto.id
-                            });
-                        }
-                    }
-                }
-            }
-            procesadas++;
-            if (procesadas % 20 === 0) process.stdout.write('.');
-
-        } catch (error) {
-            errores++;
-            logError(`Error processing FACE ${doc.folio}: ${error.message}`);
+    // Agrupar compras por producto para inserción batch
+    for (const purchase of filteredProducts) {
+        const product = skuToProduct.get(purchase.sku);
+        if (!product) {
+            // Producto no existe en catálogo, skip
+            continue;
         }
 
-        // Pequeña pausa para no saturar la API (Rate Limit Friendly)
-        await new Promise(r => setTimeout(r, 200));
-    }
-    console.log(''); // Newline
-
-    // 4. Actualizar Precios en Producto (Batch Update logic)
-    // Solo actualizamos si la fecha encontrada es MAYOR a la que ya tiene el producto
-    logInfo(`  Actualizando fichas de productos con últimos costos...`);
-
-    for (const [sku, data] of ultimosPrecios) {
-        const producto = await prisma.producto.findUnique({
-            where: { id: data.id },
-            select: { fechaUltimaCompra: true }
-        });
-
-        if (!producto.fechaUltimaCompra || isAfter(data.fecha, producto.fechaUltimaCompra)) {
-            await prisma.producto.update({
-                where: { id: data.id },
+        try {
+            // Insertar en CompraHistorica
+            await prisma.compraHistorica.create({
                 data: {
-                    precioUltimaCompra: data.precio,
-                    fechaUltimaCompra: data.fecha,
-                    proveedor: data.proveedor // Opcional: actualizar proveedor por defecto
+                    productoId: product.id,
+                    fecha: purchase.fecha,
+                    cantidad: purchase.cantidad,
+                    precioUnitario: purchase.precioUnitario,
+                    proveedor: purchase.proveedor || null,
+                    rutProveedor: purchase.rutProveedor || null,
+                    folio: purchase.folio || null
                 }
             });
-            productosActualizados++;
+            processed++;
+
+            // Rastrear el precio más reciente para actualizar Producto
+            const existing = productsToUpdateCost.get(purchase.sku);
+            if (!existing || purchase.fecha > existing.fecha) {
+                productsToUpdateCost.set(purchase.sku, {
+                    precio: purchase.precioUnitario,
+                    fecha: purchase.fecha
+                });
+            }
+
+        } catch (error) {
+            // Posible duplicado, ignorar
+            if (!error.message.includes('Unique constraint')) {
+                logWarning(`Error al guardar compra ${purchase.sku}: ${error.message}`);
+            }
         }
     }
 
-    return { procesadas, comprasGuardadas, productosActualizados, errores };
+    // Actualizar precioUltimaCompra en productos
+    for (const [sku, data] of productsToUpdateCost) {
+        const product = skuToProduct.get(sku);
+        if (!product) continue;
+
+        // Solo actualizar si la fecha es más reciente
+        const shouldUpdate = !product.fechaUltimaCompra ||
+            new Date(data.fecha) > new Date(product.fechaUltimaCompra);
+
+        if (shouldUpdate) {
+            await prisma.producto.update({
+                where: { id: product.id },
+                data: {
+                    precioUltimaCompra: data.precio,
+                    fechaUltimaCompra: data.fecha
+                }
+            });
+            updated++;
+        }
+    }
+
+    // Registrar en SyncLog
+    await prisma.syncLog.create({
+        data: {
+            tipo: 'compras_historicas',
+            mesTarget: month,
+            anoTarget: year,
+            documentos: 0,
+            productos: processed,
+            productosConVentas: updated,
+            mensaje: `Compras procesadas: ${processed}, Costos actualizados: ${updated}`
+        }
+    });
+
+    logSuccess(`✅ Compras procesadas: ${processed}, Costos actualizados: ${updated}`);
+
+    return { processed, updated };
 }
 
+/**
+ * Sincronizar compras del día anterior (para CRON diario)
+ */
+async function syncYesterday() {
+    logSection('SINCRONIZANDO COMPRAS DEL DÍA ANTERIOR');
 
-async function main() {
-    logSection('SINCRONIZACIÓN DE COMPRAS (FACE) E HISTÓRICO DE PRECIOS');
+    const yesterday = subDays(new Date(), 1);
+    const year = yesterday.getFullYear();
+    const month = yesterday.getMonth() + 1;
 
     try {
-        const fechaHoy = new Date();
-        const fechaInicio = FECHA_INICIO_DEFECTO; // O param
+        const { products } = await getDailyPurchases(yesterday);
+        return await processPurchases(products, year, month);
+    } catch (error) {
+        logError(`Error sincronizando compras de ayer: ${error.message}`);
+        throw error;
+    }
+}
 
-        logInfo(`Obteniendo compras desde ${format(fechaInicio, 'dd/MM/yyyy')}...`);
+/**
+ * Sincronizar compras del mes actual
+ */
+async function syncCurrentMonth() {
+    logSection('SINCRONIZANDO COMPRAS DEL MES ACTUAL');
 
-        // Obtener FACEs
-        // Dividimos por año/mes si es mucho, pero getAllDocuments maneja paginación anual.
-        // ComoFACEs suelen ser menos que FAVEs, probamos traer todo el rango (si es < 1 año) o por lotes.
-        // User faveService getAllDocuments.
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
 
-        const faces = await getAllDocuments('FACE', fechaInicio, fechaHoy);
+    try {
+        const { products } = await getMonthlyPurchases(year, month);
+        return await processPurchases(products, year, month);
+    } catch (error) {
+        logError(`Error sincronizando compras del mes actual: ${error.message}`);
+        throw error;
+    }
+}
 
-        logSuccess(`Total FACEs encontradas: ${faces.length}`);
+/**
+ * Sincronizar compras de un mes específico
+ */
+async function syncMonth(year, month) {
+    logSection(`SINCRONIZANDO COMPRAS DE ${month}/${year}`);
 
-        if (faces.length > 0) {
-            logInfo('Procesando compras...');
-            const stats = await processFACEs(faces);
+    try {
+        const { products } = await getMonthlyPurchases(year, month);
+        return await processPurchases(products, year, month);
+    } catch (error) {
+        logError(`Error sincronizando compras de ${month}/${year}: ${error.message}`);
+        throw error;
+    }
+}
 
-            logSuccess('RESUMEN:');
-            logSuccess(`  Facturas Procesadas: ${stats.procesadas}`);
-            logSuccess(`  Registros Históricos Guardados: ${stats.comprasGuardadas}`);
-            logSuccess(`  Productos con Costo Actualizado: ${stats.productosActualizados}`);
-            if (stats.errores > 0) logWarning(`  Errores: ${stats.errores}`);
-        } else {
-            logWarning('No se encontraron compras en el periodo.');
+/**
+ * Sincronización inicial de N meses hacia atrás
+ */
+async function syncInitial(months = 12) {
+    logSection(`SINCRONIZACIÓN INICIAL DE COMPRAS (${months} MESES)`);
+
+    const now = new Date();
+    let totalProcessed = 0;
+    let totalUpdated = 0;
+
+    for (let i = 0; i < months; i++) {
+        const targetDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const year = targetDate.getFullYear();
+        const month = targetDate.getMonth() + 1;
+
+        logInfo(`\n📅 Procesando ${month}/${year}...`);
+
+        try {
+            const { processed, updated } = await syncMonth(year, month);
+            totalProcessed += processed;
+            totalUpdated += updated;
+        } catch (error) {
+            logError(`Error en ${month}/${year}: ${error.message}`);
         }
 
-    } catch (error) {
-        logError(`Error global: ${error.message}`);
-    } finally {
-        await prisma.$disconnect();
+        // Pequeña pausa entre meses para no saturar API
+        await new Promise(resolve => setTimeout(resolve, 1000));
     }
+
+    logSuccess(`\n📊 RESUMEN: ${totalProcessed} compras procesadas, ${totalUpdated} costos actualizados`);
+    return { processed: totalProcessed, updated: totalUpdated };
+}
+
+/**
+ * Sincronización completa desde enero 2021
+ */
+async function syncFull2021() {
+    logSection('SINCRONIZACIÓN COMPLETA DE COMPRAS DESDE 2021');
+
+    const startYear = 2021;
+    const startMonth = 1;
+    const now = new Date();
+    const endYear = now.getFullYear();
+    const endMonth = now.getMonth() + 1;
+
+    let totalProcessed = 0;
+    let totalUpdated = 0;
+
+    for (let year = startYear; year <= endYear; year++) {
+        const monthStart = (year === startYear) ? startMonth : 1;
+        const monthEnd = (year === endYear) ? endMonth : 12;
+
+        for (let month = monthStart; month <= monthEnd; month++) {
+            logInfo(`\n📅 Procesando ${month}/${year}...`);
+
+            try {
+                const { processed, updated } = await syncMonth(year, month);
+                totalProcessed += processed;
+                totalUpdated += updated;
+            } catch (error) {
+                logError(`Error en ${month}/${year}: ${error.message}`);
+            }
+
+            // Pausa entre meses
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+    }
+
+    logSuccess(`\n📊 RESUMEN FINAL: ${totalProcessed} compras procesadas, ${totalUpdated} costos actualizados`);
+    return { processed: totalProcessed, updated: totalUpdated };
+    logSuccess(`\n📊 RESUMEN FINAL: ${totalProcessed} compras procesadas, ${totalUpdated} costos actualizados`);
+    return { processed: totalProcessed, updated: totalUpdated };
+}
+
+/**
+ * Resetear historial de compras (Borrar todo)
+ * Útil cuando hay errores de sincronización masivos
+ */
+async function resetHistory() {
+    logSection('⚠️  RESETEANDO HISTORIAL DE COMPRAS  ⚠️');
+
+    const count = await prisma.compraHistorica.count();
+    logWarning(`Se eliminarán ${count} registros de compras históricas.`);
+
+    // Confirmación visual (delay)
+    logInfo('Iniciando en 3 segundos...');
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    await prisma.compraHistorica.deleteMany({});
+
+    logSuccess('✅ Historial de compras eliminado correctamente.');
+}
+
+// CLI
+async function main() {
+    const args = process.argv.slice(2);
+    const command = args[0] || 'yesterday';
+
+    switch (command) {
+        case 'yesterday':
+        case 'daily':
+            await syncYesterday();
+            break;
+
+        case 'current':
+            await syncCurrentMonth();
+            break;
+
+        case 'init':
+        case 'initial':
+            const months = parseInt(args[1]) || 12;
+            await syncInitial(months);
+            break;
+
+        case 'full':
+        case '2021':
+            await syncFull2021();
+            break;
+
+        case 'month':
+            const year = parseInt(args[1]) || new Date().getFullYear();
+            const month = parseInt(args[2]) || new Date().getMonth() + 1;
+            await syncMonth(year, month);
+            await syncMonth(year, month);
+            break;
+
+        case 'reset':
+            await resetHistory();
+            break;
+
+        default:
+            console.log(`
+Uso: node scripts/syncCompras.js [comando] [opciones]
+
+Comandos:
+  yesterday, daily    - Sincroniza el día anterior (defecto, para CRON)
+  current             - Sincroniza el mes actual
+  init, initial [N]   - Sincronización inicial de N meses (defecto: 12)
+  full, 2021          - Sincronización completa desde enero 2021
+  month [año] [mes]   - Sincronizar un mes específico
+  reset               - Borrar todo el historial de compras (CUIDADO)
+            `);
+    }
+
+    await prisma.$disconnect();
 }
 
 if (require.main === module) {
-    main().catch(console.error);
+    main().catch(error => {
+        logError(`Error fatal: ${error.message}`);
+        process.exit(1);
+    });
 }
 
-module.exports = { main };
+module.exports = {
+    syncYesterday,
+    syncCurrentMonth,
+    syncMonth,
+    syncInitial,
+    syncFull2021,
+    resetHistory,
+    processPurchases
+};

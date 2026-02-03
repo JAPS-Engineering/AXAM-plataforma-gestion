@@ -71,6 +71,11 @@ echo "   📊 Sincronizando datos del mes actual..."
 docker-compose exec -T axam-dashboard node scripts/syncDaily.js current
 echo "   ✅ Datos del mes actual sincronizados"
 
+# Sincronizar compras históricas (desde 2021)
+echo "   💰 Sincronizando compras históricas (desde 2021)..."
+docker-compose exec -T axam-dashboard node scripts/syncCompras.js full
+echo "   ✅ Compras históricas sincronizadas"
+
 # ============================================
 # Paso 6: Verificación final
 # ============================================
@@ -85,10 +90,14 @@ async function check() {
     const productos = await prisma.producto.count();
     const ventasHistoricas = await prisma.ventaHistorica.count();
     const ventasActuales = await prisma.ventaActual.count();
+    const comprasHistoricas = await prisma.compraHistorica.count();
+    const productosConCosto = await prisma.producto.count({ where: { precioUltimaCompra: { not: null } } });
     const emails = await prisma.emailNotificacion.count();
     console.log('   📊 Productos: ' + productos);
     console.log('   📈 Ventas históricas: ' + ventasHistoricas);
     console.log('   📉 Ventas actuales: ' + ventasActuales);
+    console.log('   💰 Compras históricas: ' + comprasHistoricas);
+    console.log('   💵 Productos con costo: ' + productosConCosto);
     console.log('   📧 Emails configurados: ' + emails);
     await prisma.\$disconnect();
 }
