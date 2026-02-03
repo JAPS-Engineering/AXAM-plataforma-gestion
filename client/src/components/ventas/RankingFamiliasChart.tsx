@@ -9,9 +9,10 @@ interface RankingFamiliasChartProps {
     loading: boolean;
     colors: string[];
     allEntities: string[];
+    title?: string;
 }
 
-export function RankingFamiliasChart({ data, year, loading, colors, allEntities }: RankingFamiliasChartProps) {
+export function RankingFamiliasChart({ data, year, loading, colors, allEntities, title = "Ranking por Familia" }: RankingFamiliasChartProps) {
     if (loading) {
         return (
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm h-[400px] flex items-center justify-center">
@@ -26,7 +27,7 @@ export function RankingFamiliasChart({ data, year, loading, colors, allEntities 
                 <div>
                     <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                         <BarChart3 className="h-5 w-5 text-indigo-500" />
-                        Ranking por Familia
+                        {title}
                     </h3>
                     <p className="text-xs text-slate-500">Ventas acumuladas del periodo seleccionado</p>
                 </div>

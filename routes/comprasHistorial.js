@@ -466,4 +466,232 @@ router.get('/stats', async (req, res) => {
     }
 });
 
+
+/**
+ * GET /api/compras/graficos
+ * Datos agregados para gráficos de análisis de compras
+ * Query params: fechaInicio, fechaFin, familia, proveedor
+ */
+router.get('/graficos', async (req, res) => {
+    try {
+        const { fechaInicio, fechaFin, familia, proveedor } = req.query;
+
+        // --- 1. Definir rango de fechas ---
+        // Default: Últimos 12 meses
+        let startDate = new Date();
+        startDate.setMonth(startDate.getMonth() - 12);
+        startDate.setDate(1);
+        let endDate = new Date();
+
+        if (fechaInicio) startDate = new Date(fechaInicio);
+        if (fechaFin) endDate = new Date(fechaFin + 'T23:59:59.999Z');
+
+        // Where base
+        const whereBase = {
+            fecha: {
+                gte: startDate,
+                lte: endDate
+            }
+        };
+
+        if (familia) whereBase.producto = { familia };
+        if (proveedor) whereBase.proveedor = { contains: proveedor };
+
+        // --- 2. Market Share & Ranking (Por Familia) ---
+        // Prisma no soporta agrupar por relación directamente de forma fácil en groupByKey
+        // Así que obtenemos las compras y agregamos en memoria o usamos raw query.
+        // Dado que pueden ser muchas, usaremos groupBy de Prisma en CompraHistorica 
+        // pero necesitamos la familia del producto.
+        // Workaround eficiente: Traer todas las compras selectivas o usar $queryRaw.
+        // Por simplicidad y consistencia, usaremos findMany selectivo y agregación en memoria 
+        // (asumiendo volumen manejable para analítica, o optimizar después).
+
+        const comprasPeriodo = await prisma.compraHistorica.findMany({
+            where: whereBase,
+            select: {
+                fecha: true,
+                cantidad: true,
+                precioUnitario: true,
+                producto: {
+                    select: { familia: true }
+                }
+            }
+        });
+
+        const familyStats = new Map();
+        let totalVentaPeriodo = 0;
+
+        for (const c of comprasPeriodo) {
+            const fam = c.producto?.familia || 'Sin Familia';
+            const monto = c.cantidad * c.precioUnitario;
+
+            totalVentaPeriodo += monto;
+
+            if (!familyStats.has(fam)) {
+                familyStats.set(fam, {
+                    familia: fam,
+                    totalMonto: 0,
+                    totalCantidad: 0
+                });
+            }
+            const stat = familyStats.get(fam);
+            stat.totalMonto += monto;
+            stat.totalCantidad += c.cantidad;
+        }
+
+        // Formato para Market Share Chart
+        const marketShare = Array.from(familyStats.values())
+            .map(s => ({
+                name: s.familia,
+                value: s.totalMonto,
+                percentage: totalVentaPeriodo > 0 ? (s.totalMonto / totalVentaPeriodo) * 100 : 0
+            }))
+            .sort((a, b) => b.value - a.value);
+
+        // Formato para Ranking Table
+        const ventasPorFamilia = Array.from(familyStats.values())
+            .sort((a, b) => b.totalMonto - a.totalMonto);
+
+
+        // --- 3. Rendimiento Anual (Comparativa Año Actual vs Anterior) ---
+        // Recuperar años desde query params o defaults
+        // yearRef = Año Actual (Azul fuerte)
+        // yearComp = Año Anterior (Gris punteado)
+        let yearRef = req.query.yearRef ? parseInt(req.query.yearRef) : endDate.getFullYear();
+        let yearComp = req.query.yearComp ? parseInt(req.query.yearComp) : yearRef - 1;
+
+        // Validar que sean números
+        if (isNaN(yearRef)) yearRef = endDate.getFullYear();
+        if (isNaN(yearComp)) yearComp = yearRef - 1;
+
+        // Raw query es más rápido para series de tiempo grandes, pero usaremos group aggregation manual para consistencia
+        // Necesitamos datos de TODO el año referencia y TODO el año comparación
+
+        const whereAnual = {};
+        if (familia) whereAnual.producto = { familia };
+        if (proveedor) whereAnual.proveedor = { contains: proveedor };
+
+        const comprasAnuales = await prisma.compraHistorica.findMany({
+            where: {
+                ...whereAnual,
+                OR: [
+                    {
+                        fecha: {
+                            gte: new Date(yearRef, 0, 1),
+                            lte: new Date(yearRef, 11, 31, 23, 59, 59)
+                        }
+                    },
+                    {
+                        fecha: {
+                            gte: new Date(yearComp, 0, 1),
+                            lte: new Date(yearComp, 11, 31, 23, 59, 59)
+                        }
+                    }
+                ]
+            },
+            select: {
+                fecha: true,
+                cantidad: true,
+                precioUnitario: true
+            }
+        });
+
+        const rendimientoMensual = new Map();
+        // Inicializar meses
+        for (let m = 0; m < 12; m++) {
+            rendimientoMensual.set(m, {
+                mes: m + 1,
+                mensualActual: 0,
+                mensualAnterior: 0,
+                acumuladoActual: 0,
+                acumuladoAnterior: 0
+            });
+        }
+
+        let totalAnualActual = 0; // Para el KPI de Market Share (esto podría ser redundante si usamos el acumulado final, pero lo mantenemos para consistencia)
+        let totalAnualAnterior = 0;
+
+        for (const c of comprasAnuales) {
+            const d = new Date(c.fecha);
+            const y = d.getFullYear();
+            const m = d.getMonth();
+            const monto = c.cantidad * c.precioUnitario;
+
+            if (rendimientoMensual.has(m)) {
+                const stat = rendimientoMensual.get(m);
+                if (y === yearRef) {
+                    stat.mensualActual += monto;
+                    totalAnualActual += monto;
+                } else if (y === yearComp) {
+                    stat.mensualAnterior += monto;
+                    totalAnualAnterior += monto;
+                }
+            }
+        }
+
+        // Calcular acumulados
+        let accActual = 0;
+        let accAnterior = 0;
+        const rendimientoAnual = [];
+
+        for (let m = 0; m < 12; m++) {
+            const stat = rendimientoMensual.get(m);
+            accActual += stat.mensualActual;
+            accAnterior += stat.mensualAnterior;
+
+            stat.acumuladoActual = accActual;
+            stat.acumuladoAnterior = accAnterior;
+
+            rendimientoAnual.push(stat);
+        }
+
+
+        // --- 4. Tendencias (Serie de tiempo por familia para el periodo seleccionado) ---
+        // Agrupar por Mes-Año y Familia
+        const tendenciasMap = new Map();
+
+        for (const c of comprasPeriodo) {
+            const d = new Date(c.fecha);
+            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            const fam = c.producto?.familia || 'Sin Familia';
+            const monto = c.cantidad * c.precioUnitario;
+
+            if (!tendenciasMap.has(key)) {
+                tendenciasMap.set(key, {
+                    periodo: key,
+                    ano: d.getFullYear(),
+                    mes: d.getMonth() + 1,
+                    familias: {}
+                });
+            }
+            const t = tendenciasMap.get(key);
+            if (!t.familias[fam]) t.familias[fam] = 0;
+            t.familias[fam] += monto;
+        }
+
+        const tendencias = Array.from(tendenciasMap.values())
+            .sort((a, b) => a.periodo.localeCompare(b.periodo));
+
+
+        // --- Respuesta ---
+        res.json({
+            meta: {
+                totalVentaPeriodo,
+                totalVentaAnual: totalAnualActual,
+                anoActual: yearRef,
+                anoAnterior: yearComp
+            },
+            marketShare,
+            ventasPorFamilia,
+            rendimientoAnual,
+            tendencias
+        });
+
+    } catch (error) {
+        console.error('Error al obtener gráficos de compras:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 module.exports = router;
+

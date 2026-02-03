@@ -9,9 +9,19 @@ interface RendimientoAnualChartProps {
     loading: boolean;
     onYearRefChange?: (year: number) => void;
     onYearCompChange?: (year: number) => void;
+    title?: string;
+    subtitle?: string;
 }
 
-export function RendimientoAnualChart({ data, meta, loading, onYearRefChange, onYearCompChange }: RendimientoAnualChartProps) {
+export function RendimientoAnualChart({
+    data,
+    meta,
+    loading,
+    onYearRefChange,
+    onYearCompChange,
+    title = "Rendimiento Anual Acumulado (Comparativa)",
+    subtitle
+}: RendimientoAnualChartProps) {
     if (loading) {
         return (
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm h-[400px] flex items-center justify-center">
@@ -19,6 +29,9 @@ export function RendimientoAnualChart({ data, meta, loading, onYearRefChange, on
             </div>
         );
     }
+
+    // Default subtitle if not provided
+    const displaySubtitle = subtitle || `Progreso de ventas acumuladas: ${meta?.anoAnterior} vs ${meta?.anoActual}`;
 
     const years = [2021, 2022, 2023, 2024, 2025, 2026];
 
@@ -28,9 +41,9 @@ export function RendimientoAnualChart({ data, meta, loading, onYearRefChange, on
                 <div>
                     <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                         <Calendar className="h-5 w-5 text-indigo-500" />
-                        Rendimiento Anual Acumulado (Comparativa)
+                        {title}
                     </h3>
-                    <p className="text-xs text-slate-500">Progreso de ventas acumuladas: {meta?.anoAnterior} vs {meta?.anoActual}</p>
+                    <p className="text-xs text-slate-500">{displaySubtitle}</p>
                 </div>
                 <div className="flex items-center gap-4 text-xs">
                     {/* Año Anterior Selector (Debe ser menor al actual) */}

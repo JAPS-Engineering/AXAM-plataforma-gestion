@@ -15,8 +15,11 @@ import {
     ChevronUp,
     ChevronDown,
     ChevronsUpDown,
-    LineChart as LineChartIcon
+    LineChart as LineChartIcon,
+    BarChart3,
+    Table as TableIcon
 } from "lucide-react";
+import { PurchaseCharts } from "./components/purchase-charts";
 import {
     LineChart,
     Line,
@@ -112,6 +115,9 @@ export default function HistorialComprasPage() {
         start: getPastMonth(6),
         end: getCurrentMonth()
     });
+
+    // View Mode State
+    const [viewMode, setViewMode] = useState<"table" | "charts">("table");
 
     // Filters
     const [busqueda, setBusqueda] = useState("");
@@ -272,7 +278,27 @@ export default function HistorialComprasPage() {
                     </div>
 
                     {/* Time Filter Controls */}
+                    {/* Header Controls */}
                     <div className="flex items-center gap-3">
+                        {/* View Toggle */}
+                        <div className="bg-slate-100 p-1 rounded-lg flex items-center border border-slate-200">
+                            <button
+                                onClick={() => setViewMode("table")}
+                                className={`p-1.5 rounded-md transition-all ${viewMode === "table" ? "bg-white shadow-sm text-slate-900" : "text-slate-400 hover:text-slate-600"}`}
+                                title="Vista de Tabla"
+                            >
+                                <TableIcon className="h-4 w-4" />
+                            </button>
+                            <button
+                                onClick={() => setViewMode("charts")}
+                                className={`p-1.5 rounded-md transition-all ${viewMode === "charts" ? "bg-white shadow-sm text-indigo-600" : "text-slate-400 hover:text-slate-600"}`}
+                                title="Vista de Gráficos"
+                            >
+                                <BarChart3 className="h-4 w-4" />
+                            </button>
+                        </div>
+                        <div className="h-8 w-px bg-slate-200 mx-2"></div>
+
                         <div className="bg-slate-50 rounded-lg p-1 flex items-center border border-slate-200 gap-1">
                             <button
                                 onClick={() => setPeriodMode("preset")}
@@ -415,169 +441,176 @@ export default function HistorialComprasPage() {
                         </div>
                     )}
 
-                    {/* Filters */}
-                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-4">
-                        <div className="flex flex-wrap gap-4 items-center">
-                            <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-                                <Search className="h-4 w-4 text-slate-400" />
-                                <input
-                                    type="text"
-                                    value={busqueda}
-                                    onChange={(e) => { setBusqueda(e.target.value); setCurrentPage(1); }}
-                                    placeholder="Buscar por SKU..."
-                                    className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                                />
-                            </div>
-                            <input
-                                type="text"
-                                value={familia}
-                                onChange={(e) => { setFamilia(e.target.value); setCurrentPage(1); }}
-                                placeholder="Familia..."
-                                className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 w-32"
-                            />
-                            <input
-                                type="text"
-                                value={proveedor}
-                                onChange={(e) => { setProveedor(e.target.value); setCurrentPage(1); }}
-                                placeholder="Proveedor..."
-                                className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 w-40"
-                            />
-                        </div>
-                    </div>
-
-                    {/* Pagination Top */}
-                    <Pagination
-                        currentPage={currentPage}
-                        totalPages={historial?.totalPages || 1}
-                        pageSize={pageSize}
-                        totalItems={historial?.total || 0}
-                        onPageChange={setCurrentPage}
-                        onPageSizeChange={handlePageSizeChange}
-                        className="mb-4"
-                    />
-
-                    {/* Table */}
-                    {isLoading ? (
-                        <div className="flex items-center justify-center h-64">
-                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
-                        </div>
-                    ) : error ? (
-                        <div className="flex items-center justify-center h-64 text-red-600">
-                            Error: {(error as Error).message}
-                        </div>
-                    ) : (
-                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm text-left">
-                                    <thead className="bg-slate-50 text-slate-600 font-medium border-b border-slate-200">
-                                        <tr>
-                                            <th className="px-4 py-3 sticky left-0 bg-slate-50 z-10 w-28 text-center border-r border-slate-200 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]">
-                                                <div className="flex items-center justify-center gap-1 group">
-                                                    Fecha
-                                                    <SortButton column="fecha" currentSort={currentSort} onSort={handleSort} />
-                                                </div>
-                                            </th>
-                                            <th className="px-4 py-3 sticky left-28 bg-slate-50 z-10 w-32 border-r border-slate-200 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]">
-                                                <div className="flex items-center gap-1 group">
-                                                    SKU
-                                                    <SortButton column="sku" currentSort={currentSort} onSort={handleSort} />
-                                                </div>
-                                            </th>
-                                            <th className="px-4 py-3 min-w-[200px]">
-                                                <div className="flex items-center gap-1 group">
-                                                    Descripción
-                                                    <SortButton column="descripcion" currentSort={currentSort} onSort={handleSort} />
-                                                </div>
-                                            </th>
-                                            <th className="px-4 py-3 whitespace-nowrap">
-                                                <div className="flex items-center gap-1 group">
-                                                    Familia
-                                                    <SortButton column="familia" currentSort={currentSort} onSort={handleSort} />
-                                                </div>
-                                            </th>
-                                            <th className="px-4 py-3 text-right">
-                                                <div className="flex items-center justify-end gap-1 w-full group">
-                                                    Cant.
-                                                    <SortButton column="cantidad" currentSort={currentSort} onSort={handleSort} isNumeric />
-                                                </div>
-                                            </th>
-                                            <th className="px-4 py-3 text-right">
-                                                <div className="flex items-center justify-end gap-1 w-full group">
-                                                    Precio Unit.
-                                                    <SortButton column="precioUnitario" currentSort={currentSort} onSort={handleSort} isNumeric />
-                                                </div>
-                                            </th>
-                                            <th className="px-4 py-3 text-right text-green-700 bg-green-50/50">
-                                                <div className="flex items-center justify-end gap-1 w-full group">
-                                                    Costo Última
-                                                    <SortButton column="costoUltima" currentSort={currentSort} onSort={handleSort} isNumeric />
-                                                </div>
-                                            </th>
-                                            <th className="px-4 py-3 text-center">Evolución</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {comprasSorted.length === 0 ? (
-                                            <tr>
-                                                <td colSpan={8} className="px-4 py-12 text-center text-slate-500">
-                                                    No se encontraron compras en el período seleccionado
-                                                </td>
-                                            </tr>
-                                        ) : (
-                                            comprasSorted.map((compra: CompraHistorica) => (
-                                                <tr key={compra.id} className="hover:bg-slate-50 transition-colors group">
-                                                    <td className="px-4 py-3 whitespace-nowrap text-slate-600 sticky left-0 bg-white group-hover:bg-slate-50 border-r border-slate-100 font-medium text-center shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]">
-                                                        {formatDate(compra.fecha)}
-                                                    </td>
-                                                    <td className="px-4 py-3 font-medium text-slate-900 sticky left-28 bg-white group-hover:bg-slate-50 border-r border-slate-100 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]">
-                                                        {compra.producto?.sku}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-slate-600 max-w-[240px] truncate" title={compra.producto?.descripcion}>
-                                                        {compra.producto?.descripcion}
-                                                    </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap">
-                                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-800 border border-slate-200">
-                                                            {compra.producto?.familia || "S/F"}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right font-mono text-slate-600">
-                                                        {compra.cantidad.toLocaleString()}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right font-mono text-slate-600">
-                                                        {formatCLP(compra.precioUnitario)}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right font-bold font-mono text-green-700 bg-green-50/30">
-                                                        {compra.producto?.precioUltimaCompra ? formatCLP(compra.producto.precioUltimaCompra) : "-"}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-center">
-                                                        <button
-                                                            onClick={() => setSelectedSku(compra.producto?.sku)}
-                                                            className="p-1.5 hover:bg-green-100 rounded text-green-600 transition-colors"
-                                                            title="Ver historial de precios"
-                                                        >
-                                                            <LineChartIcon className="h-4 w-4" />
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            ))
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Pagination Bottom */}
-                    {!isLoading && !error && (historial?.total || 0) > 0 && (
-                        <Pagination
-                            currentPage={currentPage}
-                            totalPages={historial?.totalPages || 1}
-                            pageSize={pageSize}
-                            totalItems={historial?.total || 0}
-                            onPageChange={setCurrentPage}
-                            onPageSizeChange={handlePageSizeChange}
-                            className="mt-4"
+                    {viewMode === "charts" ? (
+                        <PurchaseCharts
+                            startDate={new Date(dateRange.fechaInicio)}
+                            endDate={new Date(dateRange.fechaFin)}
                         />
+                    ) : (
+                        <>
+                            {/* Filters */}
+                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-4">
+                                <div className="flex flex-wrap gap-4 items-center">
+                                    <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                                        <Search className="h-4 w-4 text-slate-400" />
+                                        <input
+                                            type="text"
+                                            value={busqueda}
+                                            onChange={(e) => { setBusqueda(e.target.value); setCurrentPage(1); }}
+                                            placeholder="Buscar por SKU..."
+                                            className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                                        />
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={familia}
+                                        onChange={(e) => { setFamilia(e.target.value); setCurrentPage(1); }}
+                                        placeholder="Familia..."
+                                        className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 w-32"
+                                    />
+                                    <input
+                                        type="text"
+                                        value={proveedor}
+                                        onChange={(e) => { setProveedor(e.target.value); setCurrentPage(1); }}
+                                        placeholder="Proveedor..."
+                                        className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 w-40"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Pagination Top */}
+                            <Pagination
+                                currentPage={currentPage}
+                                totalPages={historial?.totalPages || 1}
+                                pageSize={pageSize}
+                                totalItems={historial?.total || 0}
+                                onPageChange={setCurrentPage}
+                                onPageSizeChange={handlePageSizeChange}
+                                className="mb-4"
+                            />
+
+                            {/* Table */}
+                            {isLoading ? (
+                                <div className="flex items-center justify-center h-64">
+                                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
+                                </div>
+                            ) : error ? (
+                                <div className="flex items-center justify-center h-64 text-red-600">
+                                    Error: {(error as Error).message}
+                                </div>
+                            ) : (
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm text-left">
+                                            <thead className="bg-slate-50 text-slate-600 font-medium border-b border-slate-200">
+                                                <tr>
+                                                    <th className="px-4 py-3 sticky left-0 bg-slate-50 z-10 w-28 text-center border-r border-slate-200 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]">
+                                                        <div className="flex items-center justify-center gap-1 group">
+                                                            Fecha
+                                                            <SortButton column="fecha" currentSort={currentSort} onSort={handleSort} />
+                                                        </div>
+                                                    </th>
+                                                    <th className="px-4 py-3 sticky left-28 bg-slate-50 z-10 w-32 border-r border-slate-200 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]">
+                                                        <div className="flex items-center gap-1 group">
+                                                            SKU
+                                                            <SortButton column="sku" currentSort={currentSort} onSort={handleSort} />
+                                                        </div>
+                                                    </th>
+                                                    <th className="px-4 py-3 min-w-[200px]">
+                                                        <div className="flex items-center gap-1 group">
+                                                            Descripción
+                                                            <SortButton column="descripcion" currentSort={currentSort} onSort={handleSort} />
+                                                        </div>
+                                                    </th>
+                                                    <th className="px-4 py-3 whitespace-nowrap">
+                                                        <div className="flex items-center gap-1 group">
+                                                            Familia
+                                                            <SortButton column="familia" currentSort={currentSort} onSort={handleSort} />
+                                                        </div>
+                                                    </th>
+                                                    <th className="px-4 py-3 text-right">
+                                                        <div className="flex items-center justify-end gap-1 w-full group">
+                                                            Cant.
+                                                            <SortButton column="cantidad" currentSort={currentSort} onSort={handleSort} isNumeric />
+                                                        </div>
+                                                    </th>
+                                                    <th className="px-4 py-3 text-right">
+                                                        <div className="flex items-center justify-end gap-1 w-full group">
+                                                            Precio Unit.
+                                                            <SortButton column="precioUnitario" currentSort={currentSort} onSort={handleSort} isNumeric />
+                                                        </div>
+                                                    </th>
+                                                    <th className="px-4 py-3 text-right text-green-700 bg-green-50/50">
+                                                        <div className="flex items-center justify-end gap-1 w-full group">
+                                                            Costo Última
+                                                            <SortButton column="costoUltima" currentSort={currentSort} onSort={handleSort} isNumeric />
+                                                        </div>
+                                                    </th>
+                                                    <th className="px-4 py-3 text-center">Evolución</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {comprasSorted.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan={8} className="px-4 py-12 text-center text-slate-500">
+                                                            No se encontraron compras en el período seleccionado
+                                                        </td>
+                                                    </tr>
+                                                ) : (
+                                                    comprasSorted.map((compra: CompraHistorica) => (
+                                                        <tr key={compra.id} className="hover:bg-slate-50 transition-colors group">
+                                                            <td className="px-4 py-3 whitespace-nowrap text-slate-600 sticky left-0 bg-white group-hover:bg-slate-50 border-r border-slate-100 font-medium text-center shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]">
+                                                                {formatDate(compra.fecha)}
+                                                            </td>
+                                                            <td className="px-4 py-3 font-medium text-slate-900 sticky left-28 bg-white group-hover:bg-slate-50 border-r border-slate-100 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]">
+                                                                {compra.producto?.sku}
+                                                            </td>
+                                                            <td className="px-4 py-3 text-slate-600 max-w-[240px] truncate" title={compra.producto?.descripcion}>
+                                                                {compra.producto?.descripcion}
+                                                            </td>
+                                                            <td className="px-4 py-3 whitespace-nowrap">
+                                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-800 border border-slate-200">
+                                                                    {compra.producto?.familia || "S/F"}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-4 py-3 text-right font-mono text-slate-600">
+                                                                {compra.cantidad.toLocaleString()}
+                                                            </td>
+                                                            <td className="px-4 py-3 text-right font-mono text-slate-600">
+                                                                {formatCLP(compra.precioUnitario)}
+                                                            </td>
+                                                            <td className="px-4 py-3 text-right font-bold font-mono text-green-700 bg-green-50/30">
+                                                                {compra.producto?.precioUltimaCompra ? formatCLP(compra.producto.precioUltimaCompra) : "-"}
+                                                            </td>
+                                                            <td className="px-4 py-3 text-center">
+                                                                <button
+                                                                    onClick={() => setSelectedSku(compra.producto?.sku)}
+                                                                    className="p-1.5 hover:bg-green-100 rounded text-green-600 transition-colors"
+                                                                    title="Ver historial de precios"
+                                                                >
+                                                                    <LineChartIcon className="h-4 w-4" />
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Pagination Bottom */}
+                            <Pagination
+                                currentPage={currentPage}
+                                totalPages={historial?.totalPages || 1}
+                                pageSize={pageSize}
+                                totalItems={historial?.total || 0}
+                                onPageChange={setCurrentPage}
+                                onPageSizeChange={handlePageSizeChange}
+                                className="mt-4"
+                            />
+                        </>
                     )}
                 </main>
             </div>

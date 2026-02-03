@@ -418,3 +418,32 @@ export async function updateVendedor(id: number, data: Partial<Vendedor>): Promi
     const response = await api.put<Vendedor>(`/vendedores/${id}`, data);
     return response.data;
 }
+
+// === API COMPRAS GRÁFICOS ===
+
+export interface ComprasGraficosResponse {
+    meta: {
+        totalVentaPeriodo: number;
+        totalVentaAnual: number;
+        anoActual: number;
+        anoAnterior: number;
+    };
+    marketShare: MarketShareRow[];
+    ventasPorFamilia: VentasFamiliaRow[];
+    rendimientoAnual: RendimientoAnualRow[];
+    tendencias: any[]; // Usar estructura similar a ventas tendencias internamente o adaptar
+}
+
+export async function fetchComprasGraficos(params?: { fechaInicio?: string; fechaFin?: string; familia?: string; proveedor?: string; yearRef?: number; yearComp?: number }): Promise<ComprasGraficosResponse> {
+    const query = new URLSearchParams();
+    if (params?.fechaInicio) query.append("fechaInicio", params.fechaInicio);
+    if (params?.fechaFin) query.append("fechaFin", params.fechaFin);
+    if (params?.familia) query.append("familia", params.familia);
+    if (params?.proveedor) query.append("proveedor", params.proveedor);
+    if (params?.yearRef) query.append("yearRef", params.yearRef.toString());
+    if (params?.yearComp) query.append("yearComp", params.yearComp.toString());
+
+    const { data } = await api.get<ComprasGraficosResponse>(`/compras/graficos?${query.toString()}`);
+    return data;
+}
+
