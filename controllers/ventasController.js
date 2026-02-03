@@ -206,14 +206,21 @@ async function getVentasResumen(req, res) {
 
 async function getGraficosAvanzados(req, res) {
     try {
-        const { marca } = req.query;
+        const { marca, yearRef, yearComp } = req.query;
         const { startYear, startMonth, endYear, endMonth } = parseDateParams(req.query);
 
+        // Logic for Comparison Years
+        // Default: Current Year vs Previous Year
         const mesActualObj = getMesActual();
-        const anoActual = mesActualObj.ano;
-        const anoAnterior = anoActual - 1;
+        
+        let anoActual = mesActualObj.ano;
+        let anoAnterior = anoActual - 1;
 
-        // SQL WHERE para rangos en queries RAW
+        // Override if params provided
+        if (yearRef) anoActual = parseInt(yearRef);
+        if (yearComp) anoAnterior = parseInt(yearComp);
+
+        // SQL WHERE para rangos en queries RAW (Main filters use the standard date range params)
         let dateFilterSql = `
             AND (
                 (v.ano > ${startYear} OR (v.ano = ${startYear} AND v.mes >= ${startMonth}))
@@ -262,7 +269,7 @@ async function getGraficosAvanzados(req, res) {
             LIMIT 10
         `);
 
-        // 4. Rendimiento Anual (FIJO AÑO ACTUAL vs ANTERIOR)
+        // 4. Rendimiento Anual (COMPARATIVA CUSTOM O DEFAULT)
         const rendimientoAnualResult = await prisma.$queryRaw`
             SELECT ano, mes, SUM(monto_neto) as totalMonto
             FROM ventas_mensuales v

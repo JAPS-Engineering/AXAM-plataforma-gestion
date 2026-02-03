@@ -259,11 +259,13 @@ export interface GraficosAvanzadosResponse {
     };
 }
 
-export async function fetchGraficosAvanzados(params?: { start?: string; end?: string; marca?: string }): Promise<GraficosAvanzadosResponse> {
+export async function fetchGraficosAvanzados(params?: { start?: string; end?: string; marca?: string; yearRef?: number; yearComp?: number }): Promise<GraficosAvanzadosResponse> {
     const query = new URLSearchParams();
     if (params?.start) query.append("start", params.start);
     if (params?.end) query.append("end", params.end);
     if (params?.marca) query.append("marca", params.marca);
+    if (params?.yearRef) query.append("yearRef", params.yearRef.toString());
+    if (params?.yearComp) query.append("yearComp", params.yearComp.toString());
 
     const { data } = await api.get<GraficosAvanzadosResponse>(`/ventas/graficos-avanzados?${query.toString()}`);
     return data;

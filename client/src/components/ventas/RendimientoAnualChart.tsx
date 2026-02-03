@@ -7,9 +7,11 @@ interface RendimientoAnualChartProps {
     data: RendimientoAnualRow[] | undefined;
     meta: { anoActual: number; anoAnterior: number } | undefined;
     loading: boolean;
+    onYearRefChange?: (year: number) => void;
+    onYearCompChange?: (year: number) => void;
 }
 
-export function RendimientoAnualChart({ data, meta, loading }: RendimientoAnualChartProps) {
+export function RendimientoAnualChart({ data, meta, loading, onYearRefChange, onYearCompChange }: RendimientoAnualChartProps) {
     if (loading) {
         return (
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm h-[400px] flex items-center justify-center">
@@ -17,6 +19,8 @@ export function RendimientoAnualChart({ data, meta, loading }: RendimientoAnualC
             </div>
         );
     }
+
+    const years = [2021, 2022, 2023, 2024, 2025, 2026];
 
     return (
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
@@ -29,13 +33,42 @@ export function RendimientoAnualChart({ data, meta, loading }: RendimientoAnualC
                     <p className="text-xs text-slate-500">Progreso de ventas acumuladas: {meta?.anoAnterior} vs {meta?.anoActual}</p>
                 </div>
                 <div className="flex items-center gap-4 text-xs">
-                    <div className="flex items-center gap-1">
-                        <div className="w-3 h-3 bg-indigo-600 rounded-full"></div>
-                        <span className="font-bold text-slate-700">{meta?.anoActual}</span>
-                    </div>
+                    {/* Año Anterior Selector (Debe ser menor al actual) */}
                     <div className="flex items-center gap-1">
                         <div className="w-3 h-3 bg-slate-300 rounded-full border border-slate-400 border-dashed"></div>
-                        <span className="text-slate-500">{meta?.anoAnterior}</span>
+                        {onYearCompChange && meta ? (
+                            <select
+                                value={meta.anoAnterior}
+                                onChange={(e) => onYearCompChange(Number(e.target.value))}
+                                className="text-xs border border-slate-200 rounded-md px-1 py-0.5 bg-white text-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                            >
+                                {years.filter(y => y < meta.anoActual).map(y => (
+                                    <option key={`comp-${y}`} value={y}>{y}</option>
+                                ))}
+                            </select>
+                        ) : (
+                            <span className="text-slate-500">{meta?.anoAnterior}</span>
+                        )}
+                    </div>
+
+                    <span className="text-slate-300 font-bold">VS</span>
+
+                    {/* Año Actual Selector (Debe ser mayor al anterior) */}
+                    <div className="flex items-center gap-1">
+                        <div className="w-3 h-3 bg-indigo-600 rounded-full"></div>
+                        {onYearRefChange && meta ? (
+                            <select
+                                value={meta.anoActual}
+                                onChange={(e) => onYearRefChange(Number(e.target.value))}
+                                className="text-xs border border-indigo-200 rounded-md px-1 py-0.5 bg-indigo-50 text-indigo-700 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                            >
+                                {years.filter(y => y > meta.anoAnterior).map(y => (
+                                    <option key={`ref-${y}`} value={y}>{y}</option>
+                                ))}
+                            </select>
+                        ) : (
+                            <span className="font-bold text-slate-700">{meta?.anoActual}</span>
+                        )}
                     </div>
                 </div>
             </div>

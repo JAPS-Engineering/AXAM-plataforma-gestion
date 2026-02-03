@@ -35,6 +35,12 @@ export default function GraficosVentasPage() {
     });
 
     // Filtros state
+    const [comparisonYears, setComparisonYears] = useState({
+        ref: new Date().getFullYear(),
+        comp: new Date().getFullYear() - 1
+    });
+
+    // Filtros state
     const [marca, setMarca] = useState("");
 
     // Params computados para la API
@@ -54,7 +60,11 @@ export default function GraficosVentasPage() {
 
     // Query Avanzados
     const computedAdvancedParams = useMemo(() => {
-        const params: any = { marca };
+        const params: any = {
+            marca,
+            yearRef: comparisonYears.ref,
+            yearComp: comparisonYears.comp
+        };
         if (periodMode === "custom") {
             params.start = customRange.start;
             params.end = customRange.end;
@@ -63,7 +73,7 @@ export default function GraficosVentasPage() {
             params.end = getCurrentMonth();
         }
         return params;
-    }, [periodMode, customRange, meses, marca]);
+    }, [periodMode, customRange, meses, marca, comparisonYears]);
 
     const { data: advancedData, isLoading: isLoadingAdv } = useQuery({
         queryKey: ["graficos-avanzados", computedAdvancedParams],
@@ -447,6 +457,8 @@ export default function GraficosVentasPage() {
                                 data={advancedData?.rendimientoAnual}
                                 meta={advancedData?.meta}
                                 loading={isLoadingAdv}
+                                onYearRefChange={(y) => setComparisonYears(prev => ({ ...prev, ref: y }))}
+                                onYearCompChange={(y) => setComparisonYears(prev => ({ ...prev, comp: y }))}
                             />
 
                             {/* Seccion 4: Tendencias por Categoría */}
