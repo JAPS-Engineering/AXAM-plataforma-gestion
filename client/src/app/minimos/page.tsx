@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { AlertTriangle, Save, Search, X } from "lucide-react";
 import { Sidebar } from "@/components/sidebar";
 import { Pagination } from "@/components/pagination";
+import { SortButton } from "@/components/sort-button";
 
 interface Producto {
     id: number;
@@ -28,6 +29,9 @@ export default function MinimosPage() {
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editValue, setEditValue] = useState<string>("");
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+    // Sorting state
+    const [sortConfig, setSortConfig] = useState<{ column: string | null; direction: "asc" | "desc" | null }>({ column: null, direction: null });
 
     const fetchProductos = useCallback(async () => {
         setLoading(true);
@@ -107,6 +111,40 @@ export default function MinimosPage() {
             handleCancel();
         }
     };
+
+    const handleSort = (column: string) => {
+        setSortConfig((prev) => {
+            if (prev.column === column) {
+                if (prev.direction === "desc") return { column, direction: "asc" };
+                if (prev.direction === "asc") return { column: null, direction: null };
+                return { column, direction: "desc" };
+            }
+            return { column, direction: column === "sku" || column === "descripcion" || column === "familia" ? "asc" : "desc" };
+        });
+    };
+
+    const sortedProductos = useMemo(() => {
+        const { column, direction } = sortConfig;
+        if (!column || !direction) return productos;
+
+        return [...productos].sort((a, b) => {
+            let aVal: any = a[column as keyof Producto];
+            let bVal: any = b[column as keyof Producto];
+
+            // Handle potential null/undefined
+            if (aVal === null || aVal === undefined) aVal = "";
+            if (bVal === null || bVal === undefined) bVal = "";
+
+            if (typeof aVal === "string" && typeof bVal === "string") {
+                return direction === "asc" ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+            }
+
+            const numA = Number(aVal) || 0;
+            const numB = Number(bVal) || 0;
+
+            return direction === "asc" ? numA - numB : numB - numA;
+        });
+    }, [productos, sortConfig]);
 
     return (
         <div className="flex h-screen bg-slate-100">
@@ -198,19 +236,34 @@ export default function MinimosPage() {
                             <thead>
                                 <tr className="bg-slate-50 border-b border-slate-200">
                                     <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                                        SKU
+                                        <div className="flex items-center gap-1">
+                                            SKU
+                                            <SortButton column="sku" currentSort={sortConfig} onSort={handleSort} />
+                                        </div>
                                     </th>
                                     <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                                        Descripción
+                                        <div className="flex items-center gap-1">
+                                            Descripción
+                                            <SortButton column="descripcion" currentSort={sortConfig} onSort={handleSort} />
+                                        </div>
                                     </th>
                                     <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                                        Familia
+                                        <div className="flex items-center gap-1">
+                                            Familia
+                                            <SortButton column="familia" currentSort={sortConfig} onSort={handleSort} />
+                                        </div>
                                     </th>
                                     <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                                        Stock Actual
+                                        <div className="flex items-center gap-1">
+                                            Stock Actual
+                                            <SortButton column="stockActual" currentSort={sortConfig} onSort={handleSort} isNumeric />
+                                        </div>
                                     </th>
                                     <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                                        Stock Mínimo
+                                        <div className="flex items-center gap-1">
+                                            Stock Mínimo
+                                            <SortButton column="stockMinimo" currentSort={sortConfig} onSort={handleSort} isNumeric />
+                                        </div>
                                     </th>
                                     <th className="text-center px-4 py-3 text-xs font-semibold text-slate-600 uppercase tracking-wider">
                                         Acciones
@@ -231,7 +284,7 @@ export default function MinimosPage() {
                                         </td>
                                     </tr>
                                 ) : (
-                                    productos.map((producto) => (
+                                    sortedProductos.map((producto) => (
                                         <tr key={producto.id} className="hover:bg-slate-50 transition-colors">
                                             <td className="px-4 py-3">
                                                 <span className="font-mono text-sm font-medium text-slate-900">

@@ -11,12 +11,15 @@ interface ProductTableProps {
     columnas: string[];
     onOrderUpdated?: () => void;
     pendientesMap?: Record<string, number>;
+    // Sorting props
+    sortConfig: SortConfig;
+    onSort: (column: SortColumn) => void;
 }
 
-type SortDirection = "asc" | "desc" | null;
-type SortColumn = "familia" | "sku" | "descripcion" | "promedio" | "ventaMes" | "stock" | "sugerido" | "aComprar" | `mes_${number}` | null;
+export type SortDirection = "asc" | "desc" | null;
+export type SortColumn = "familia" | "sku" | "descripcion" | "promedio" | "ventaMes" | "stock" | "sugerido" | "aComprar" | `mes_${number}` | null;
 
-interface SortConfig {
+export interface SortConfig {
     column: SortColumn;
     direction: SortDirection;
 }
@@ -154,92 +157,11 @@ function EditableCell({ productoId, initialValue, onSave }: EditableCellProps) {
     );
 }
 
-export function ProductTable({ productos, columnas, onOrderUpdated, pendientesMap }: ProductTableProps) {
-    const [sortConfig, setSortConfig] = useState<SortConfig>({ column: null, direction: null });
-
+export function ProductTable({ productos, columnas, onOrderUpdated, pendientesMap, sortConfig, onSort }: ProductTableProps) {
     const handleSaveOrder = useCallback(async (productoId: number, cantidad: number) => {
         await saveOrders([{ productoId, cantidad }]);
         onOrderUpdated?.();
     }, [onOrderUpdated]);
-
-    const handleSort = useCallback((column: SortColumn) => {
-        setSortConfig((prev) => {
-            if (prev.column === column) {
-                // Cycle: null -> asc -> desc -> null
-                if (prev.direction === null) return { column, direction: "asc" };
-                if (prev.direction === "asc") return { column, direction: "desc" };
-                return { column: null, direction: null };
-            }
-            return { column, direction: "asc" };
-        });
-    }, []);
-
-    // Sorted products
-    const sortedProductos = useMemo(() => {
-        if (!sortConfig.column || !sortConfig.direction) return productos;
-
-        const sorted = [...productos].sort((a, b) => {
-            let aValue: string | number;
-            let bValue: string | number;
-
-            switch (sortConfig.column) {
-                case "familia":
-                    aValue = (a.producto.familia || "").toLowerCase();
-                    bValue = (b.producto.familia || "").toLowerCase();
-                    break;
-                case "sku":
-                    aValue = a.producto.sku.toLowerCase();
-                    bValue = b.producto.sku.toLowerCase();
-                    break;
-                case "descripcion":
-                    aValue = a.producto.descripcion.toLowerCase();
-                    bValue = b.producto.descripcion.toLowerCase();
-                    break;
-                case "promedio":
-                    aValue = a.promedio || 0;
-                    bValue = b.promedio || 0;
-                    break;
-                case "ventaMes":
-                    aValue = a.mesActual?.ventaActual || 0;
-                    bValue = b.mesActual?.ventaActual || 0;
-                    break;
-                case "stock":
-                    aValue = a.mesActual?.stockActual || 0;
-                    bValue = b.mesActual?.stockActual || 0;
-                    break;
-                case "sugerido":
-                    aValue = a.compraSugerida || 0;
-                    bValue = b.compraSugerida || 0;
-                    break;
-                case "aComprar":
-                    aValue = a.compraRealizar || 0;
-                    bValue = b.compraRealizar || 0;
-                    break;
-                default:
-                    // Handle mes_X columns
-                    if (sortConfig.column?.startsWith("mes_")) {
-                        const mesIndex = parseInt(sortConfig.column.split("_")[1], 10);
-                        aValue = a.ventasMeses[mesIndex]?.cantidad || 0;
-                        bValue = b.ventasMeses[mesIndex]?.cantidad || 0;
-                    } else {
-                        return 0;
-                    }
-            }
-
-            if (typeof aValue === "string" && typeof bValue === "string") {
-                return sortConfig.direction === "asc"
-                    ? aValue.localeCompare(bValue)
-                    : bValue.localeCompare(aValue);
-            }
-
-            // Numbers: desc = mayor primero
-            return sortConfig.direction === "desc"
-                ? (bValue as number) - (aValue as number)
-                : (aValue as number) - (bValue as number);
-        });
-
-        return sorted;
-    }, [productos, sortConfig]);
 
     if (productos.length === 0) {
         return (
@@ -258,21 +180,21 @@ export function ProductTable({ productos, columnas, onOrderUpdated, pendientesMa
                         <th className="sticky left-0 z-40 bg-slate-100 px-4 py-3 text-left font-semibold text-slate-700 border-b border-slate-200 min-w-[100px]">
                             <div className="flex items-center">
                                 Familia
-                                <SortButton column="familia" currentSort={sortConfig} onSort={handleSort} />
+                                <SortButton column="familia" currentSort={sortConfig} onSort={onSort} />
                             </div>
                         </th>
                         {/* SKU */}
                         <th className="sticky left-[100px] z-40 bg-slate-100 px-4 py-3 text-left font-semibold text-slate-700 border-b border-slate-200 min-w-[120px]">
                             <div className="flex items-center">
                                 SKU
-                                <SortButton column="sku" currentSort={sortConfig} onSort={handleSort} />
+                                <SortButton column="sku" currentSort={sortConfig} onSort={onSort} />
                             </div>
                         </th>
                         {/* Descripción */}
                         <th className="sticky left-[220px] z-40 bg-slate-100 px-4 py-3 text-left font-semibold text-slate-700 border-b border-slate-200 min-w-[250px]">
                             <div className="flex items-center">
                                 Descripción
-                                <SortButton column="descripcion" currentSort={sortConfig} onSort={handleSort} />
+                                <SortButton column="descripcion" currentSort={sortConfig} onSort={onSort} />
                             </div>
                         </th>
                         {/* Columnas históricas */}
@@ -286,7 +208,7 @@ export function ProductTable({ productos, columnas, onOrderUpdated, pendientesMa
                                     <SortButton
                                         column={`mes_${idx}` as SortColumn}
                                         currentSort={sortConfig}
-                                        onSort={handleSort}
+                                        onSort={onSort}
                                         isNumeric
                                     />
                                 </div>
@@ -296,20 +218,20 @@ export function ProductTable({ productos, columnas, onOrderUpdated, pendientesMa
                         <th className="px-4 py-3 text-right font-semibold text-slate-900 bg-slate-200/50 border-b border-slate-300 border-l border-slate-200 min-w-[100px]">
                             <div className="flex items-center justify-end">
                                 Promedio
-                                <SortButton column="promedio" currentSort={sortConfig} onSort={handleSort} isNumeric />
+                                <SortButton column="promedio" currentSort={sortConfig} onSort={onSort} isNumeric />
                             </div>
                         </th>
                         {/* Mes Actual */}
                         <th className="px-4 py-3 text-right font-semibold text-blue-700 bg-blue-50 border-b border-blue-200 border-l-2 border-l-blue-400 min-w-[100px]">
                             <div className="flex items-center justify-end">
                                 Venta Mes
-                                <SortButton column="ventaMes" currentSort={sortConfig} onSort={handleSort} isNumeric />
+                                <SortButton column="ventaMes" currentSort={sortConfig} onSort={onSort} isNumeric />
                             </div>
                         </th>
                         <th className="px-4 py-3 text-right font-semibold text-blue-700 bg-blue-50 border-b border-blue-200 min-w-[90px]">
                             <div className="flex items-center justify-end">
                                 Stock
-                                <SortButton column="stock" currentSort={sortConfig} onSort={handleSort} isNumeric />
+                                <SortButton column="stock" currentSort={sortConfig} onSort={onSort} isNumeric />
                             </div>
                         </th>
                         <th className="px-4 py-3 text-center font-semibold text-blue-700 bg-blue-50 border-b border-blue-200 min-w-[80px]">
@@ -325,19 +247,19 @@ export function ProductTable({ productos, columnas, onOrderUpdated, pendientesMa
                         <th className="px-4 py-3 text-right font-semibold text-emerald-800 bg-emerald-100 border-b border-emerald-300 border-l-2 border-l-emerald-500 min-w-[110px]">
                             <div className="flex items-center justify-end">
                                 Sugerido
-                                <SortButton column="sugerido" currentSort={sortConfig} onSort={handleSort} isNumeric />
+                                <SortButton column="sugerido" currentSort={sortConfig} onSort={onSort} isNumeric />
                             </div>
                         </th>
                         <th className="px-4 py-3 text-right font-semibold text-amber-700 bg-amber-50 border-b border-amber-200 min-w-[110px]">
                             <div className="flex items-center justify-end">
                                 A Comprar
-                                <SortButton column="aComprar" currentSort={sortConfig} onSort={handleSort} isNumeric />
+                                <SortButton column="aComprar" currentSort={sortConfig} onSort={onSort} isNumeric />
                             </div>
                         </th>
                     </tr>
                 </thead>
                 <tbody>
-                    {sortedProductos.map((item, idx) => {
+                    {productos.map((item, idx) => {
                         const compraSugerida = item.compraSugerida || 0;
                         const bajoMinimo = item.bajoMinimo;
                         const pendientes = pendientesMap ? (pendientesMap[item.producto.sku] || 0) : 0;

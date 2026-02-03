@@ -6,7 +6,7 @@ import { Sidebar } from "@/components/sidebar";
 import { Header } from "@/components/header";
 import { KPICard } from "@/components/kpi-card";
 import { FiltersBar, StockStatus, calculateProductStatus } from "@/components/filters-bar";
-import { ProductTable } from "@/components/product-table";
+import { ProductTable, SortConfig, SortColumn } from "@/components/product-table";
 import { Pagination } from "@/components/pagination";
 import { SyncModal } from "@/components/sync-modal";
 import { useState, useMemo, useEffect } from "react";
@@ -27,6 +27,9 @@ export default function DashboardPage() {
   const [salesStatus, setSalesStatus] = useState<'all' | 'with_sales' | 'without_sales'>('all');
   const [estadosSeleccionados, setEstadosSeleccionados] = useState<StockStatus[]>([]);
   const [soloBajoMinimo, setSoloBajoMinimo] = useState(false);
+
+  // Sorting state
+  const [sortConfig, setSortConfig] = useState<SortConfig>({ column: null, direction: null });
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -165,8 +168,73 @@ export default function DashboardPage() {
       });
     }
 
+
+
+    // Apply sorting
+    if (sortConfig.column && sortConfig.direction) {
+      result = [...result].sort((a, b) => {
+        let aValue: string | number;
+        let bValue: string | number;
+
+        switch (sortConfig.column) {
+          case "familia":
+            aValue = (a.producto.familia || "").toLowerCase();
+            bValue = (b.producto.familia || "").toLowerCase();
+            break;
+          case "sku":
+            aValue = a.producto.sku.toLowerCase();
+            bValue = b.producto.sku.toLowerCase();
+            break;
+          case "descripcion":
+            aValue = a.producto.descripcion.toLowerCase();
+            bValue = b.producto.descripcion.toLowerCase();
+            break;
+          case "promedio":
+            aValue = a.promedio || 0;
+            bValue = b.promedio || 0;
+            break;
+          case "ventaMes":
+            aValue = a.mesActual?.ventaActual || 0;
+            bValue = b.mesActual?.ventaActual || 0;
+            break;
+          case "stock":
+            aValue = a.mesActual?.stockActual || 0;
+            bValue = b.mesActual?.stockActual || 0;
+            break;
+          case "sugerido":
+            aValue = a.compraSugerida || 0;
+            bValue = b.compraSugerida || 0;
+            break;
+          case "aComprar":
+            aValue = a.compraRealizar || 0;
+            bValue = b.compraRealizar || 0;
+            break;
+          default:
+            // Handle mes_X columns
+            if (sortConfig.column?.startsWith("mes_")) {
+              const mesIndex = parseInt(sortConfig.column.split("_")[1], 10);
+              aValue = a.ventasMeses[mesIndex]?.cantidad || 0;
+              bValue = b.ventasMeses[mesIndex]?.cantidad || 0;
+            } else {
+              return 0;
+            }
+        }
+
+        if (typeof aValue === "string" && typeof bValue === "string") {
+          return sortConfig.direction === "asc"
+            ? aValue.localeCompare(bValue)
+            : bValue.localeCompare(aValue);
+        }
+
+        // Numbers: desc = mayor primero
+        return sortConfig.direction === "desc"
+          ? (bValue as number) - (aValue as number)
+          : (aValue as number) - (bValue as number);
+      });
+    }
+
     return result;
-  }, [data?.productos, busqueda, salesStatus, estadosSeleccionados, soloBajoMinimo]);
+  }, [data?.productos, busqueda, salesStatus, estadosSeleccionados, soloBajoMinimo, sortConfig]);
 
   // Paginated products
   const { paginatedProducts, totalPages } = useMemo(() => {
@@ -194,6 +262,18 @@ export default function DashboardPage() {
   const handlePageSizeChange = (size: number) => {
     setPageSize(size);
     setCurrentPage(1);
+  };
+
+  const handleSort = (column: SortColumn) => {
+    setSortConfig((prev) => {
+      if (prev.column === column) {
+        // Cycle: null -> asc -> desc -> null
+        if (prev.direction === null) return { column, direction: "asc" };
+        if (prev.direction === "asc") return { column, direction: "desc" };
+        return { column: null, direction: null };
+      }
+      return { column, direction: "asc" };
+    });
   };
 
   // KPI calculations
@@ -372,6 +452,8 @@ export default function DashboardPage() {
               columnas={data?.meta?.columnas || []}
               onOrderUpdated={() => refetch()}
               pendientesMap={pendientesData}
+              sortConfig={sortConfig}
+              onSort={handleSort}
             />
           )}
 

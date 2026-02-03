@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Sidebar } from "@/components/sidebar";
 import { Pagination } from "@/components/pagination";
+import { SearchableSelect } from "@/components/searchable-select";
 import {
     TrendingUp,
     Calculator,
@@ -368,24 +369,17 @@ export default function AnalisisPage() {
                                 <label className="block text-sm font-medium text-slate-700 mb-2">
                                     {tipoFiltro === 'familia' ? 'Familia' : 'Proveedor'}
                                 </label>
-                                <select
+                                <SearchableSelect
                                     value={proveedorSeleccionado}
-                                    onChange={(e) => setProveedorSeleccionado(e.target.value)}
+                                    onChange={setProveedorSeleccionado}
                                     disabled={loadingProveedores}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                                >
-                                    {loadingProveedores ? (
-                                        <option>Cargando...</option>
-                                    ) : proveedores.length === 0 ? (
-                                        <option>Sin opciones</option>
-                                    ) : (
-                                        proveedores.map((p) => (
-                                            <option key={p.nombre} value={p.nombre}>
-                                                {p.nombre} ({p.productosCount})
-                                            </option>
-                                        ))
-                                    )}
-                                </select>
+                                    placeholder={loadingProveedores ? "Cargando..." : "Seleccionar..."}
+                                    searchPlaceholder={`Buscar ${tipoFiltro === 'familia' ? 'familia' : 'proveedor'}...`}
+                                    options={proveedores.map(p => ({
+                                        value: p.nombre,
+                                        label: `${p.nombre} (${p.productosCount})`
+                                    }))}
+                                />
                             </div>
 
                             <div>
