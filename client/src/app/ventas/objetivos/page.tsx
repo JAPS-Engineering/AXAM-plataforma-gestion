@@ -214,26 +214,28 @@ export default function ObjetivosPage() {
                 });
             });
 
-            // 2. Calculate Current Month KPIs (Try meta first, then fallback)
+            // 2. Calculate Current Month KPIs (ALWAYS use local data for real-time updates)
             let currentMonthSales = 0;
             let currentMonthTarget = 0;
 
-            if ((data.meta as any).currentMonthStats) {
-                currentMonthSales = (data.meta as any).currentMonthStats.sales;
-                currentMonthTarget = (data.meta as any).currentMonthStats.target;
-            } else {
-                // Fallback for older API versions or missing meta
-                const currentMonthKey = getCurrentMonth();
-                const unpaddedCurrentMonthKey = `${new Date().getFullYear()}-${new Date().getMonth() + 1}`;
-                Object.keys(data.ventas).forEach(vendedor => {
-                    const venta = data.ventas[vendedor]?.[currentMonthKey] ?? data.ventas[vendedor]?.[unpaddedCurrentMonthKey] ?? 0;
-                    const objetivo = data.objetivos[vendedor]?.[currentMonthKey] ?? data.objetivos[vendedor]?.[unpaddedCurrentMonthKey] ?? 0;
-                    if (objetivo > 0) {
-                        currentMonthSales += venta;
-                        currentMonthTarget += objetivo;
-                    }
-                });
-            }
+            const currentMonthKey = getCurrentMonth();
+            const unpaddedCurrentMonthKey = `${new Date().getFullYear()}-${new Date().getMonth() + 1}`;
+
+            // First pass: identify which sellers have objectives set
+            const sellersWithObjectives = new Set<string>();
+            Object.keys(data.objetivos).forEach(vendedor => {
+                const objetivo = data.objetivos[vendedor]?.[currentMonthKey] ?? data.objetivos[vendedor]?.[unpaddedCurrentMonthKey] ?? 0;
+                if (objetivo > 0) {
+                    sellersWithObjectives.add(vendedor);
+                    currentMonthTarget += objetivo;
+                }
+            });
+
+            // Second pass: only sum sales from sellers with objectives
+            sellersWithObjectives.forEach(vendedor => {
+                const venta = data.ventas[vendedor]?.[currentMonthKey] ?? data.ventas[vendedor]?.[unpaddedCurrentMonthKey] ?? 0;
+                currentMonthSales += venta;
+            });
 
             const cumplimiento = currentMonthTarget > 0 ? (currentMonthSales / currentMonthTarget) * 100 : 0;
 

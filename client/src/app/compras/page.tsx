@@ -440,15 +440,28 @@ export default function AnalisisPage() {
                             </div>
 
                             <div className="flex items-end">
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        checked={soloEnQuiebre}
-                                        onChange={(e) => setSoloEnQuiebre(e.target.checked)}
-                                        className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
-                                    />
-                                    <span className="text-sm text-slate-700">Solo bajo mínimo</span>
-                                </label>
+                                <div className="flex flex-col gap-1">
+                                    <span className="text-xs font-medium text-transparent select-none">
+                                        Filtro
+                                    </span>
+                                    <button
+                                        onClick={() => setSoloEnQuiebre(!soloEnQuiebre)}
+                                        className={cn(
+                                            "flex items-center gap-2 px-3 py-2 text-sm font-medium border rounded-lg transition-all shadow-sm whitespace-nowrap",
+                                            soloEnQuiebre
+                                                ? "bg-red-50 text-red-700 border-red-200 ring-1 ring-red-200"
+                                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300"
+                                        )}
+                                    >
+                                        <div className={cn(
+                                            "h-4 w-4 rounded border flex items-center justify-center transition-colors",
+                                            soloEnQuiebre ? "bg-red-600 border-red-600" : "border-slate-400 bg-white"
+                                        )}>
+                                            {soloEnQuiebre && <CheckCircle2 className="h-3 w-3 text-white" />}
+                                        </div>
+                                        <span>Solo bajo mínimo</span>
+                                    </button>
+                                </div>
                             </div>
 
                             <div>

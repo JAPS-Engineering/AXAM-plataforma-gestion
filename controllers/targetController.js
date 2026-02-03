@@ -117,19 +117,30 @@ async function getVentasPorVendedor(req, res) {
         const proyecciones = await prisma.proyeccionVenta.findMany({ where: { AND: extendedDateClause } });
 
         // --- CALCULAR ESTADÍSTICAS DEL MES ACTUAL (PARA KPIs SIEMPRE VISIBLES) ---
-        // NOTA: VentaActual ya no se usa, consultamos VentaHistorica para el mes actual
-        const currentSalesTotal = await prisma.ventaHistorica.aggregate({
-            where: { ano: mesActual.ano, mes: mesActual.mes },
-            _sum: { montoNeto: true }
+        // Primero obtenemos los vendedores que tienen objetivo para el mes actual
+        const objetivosMesActual = await prisma.objetivoVenta.findMany({
+            where: { mes: mesActual.mes, ano: mesActual.ano, tipo: 'VENDEDOR' }
         });
-        const currentMonthSales = currentSalesTotal._sum.montoNeto || 0;
 
-        // Objetivo mes actual total
-        const objActualTotal = await prisma.objetivoVenta.aggregate({
-            where: { mes: mesActual.mes, ano: mesActual.ano, tipo: 'VENDEDOR' },
-            _sum: { montoObjetivo: true }
-        });
-        const currentMonthTarget = objActualTotal._sum.montoObjetivo || 0;
+        // Suma de objetivos
+        const currentMonthTarget = objetivosMesActual.reduce((sum, obj) => sum + Number(obj.montoObjetivo || 0), 0);
+
+        // IDs de vendedores con objetivo
+        const vendedoresConObjetivo = objetivosMesActual.map(o => o.entidadId);
+
+        // Solo sumamos ventas de vendedores que tienen objetivo
+        let currentMonthSales = 0;
+        if (vendedoresConObjetivo.length > 0) {
+            const currentSalesTotal = await prisma.ventaHistorica.aggregate({
+                where: {
+                    ano: mesActual.ano,
+                    mes: mesActual.mes,
+                    vendedor: { in: vendedoresConObjetivo }
+                },
+                _sum: { montoNeto: true }
+            });
+            currentMonthSales = currentSalesTotal._sum.montoNeto || 0;
+        }
 
         // --- Obtener Ventas por Familia (Agrupado por Vendedor -> Familia) ---
         // NOTA: VentaActual ya no se usa, consultamos solo VentaHistorica
