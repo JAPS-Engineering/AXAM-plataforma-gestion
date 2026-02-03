@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { AlertTriangle, Save, Search, X } from "lucide-react";
+import { AlertTriangle, Save, Search, X, Mail, Plus, Trash2, Send, Bell } from "lucide-react";
 import { Sidebar } from "@/components/sidebar";
 import { Pagination } from "@/components/pagination";
 import { SortButton } from "@/components/sort-button";
@@ -14,6 +14,13 @@ interface Producto {
     proveedor: string;
     stockMinimo: number | null;
     stockActual?: number;
+}
+
+interface EmailConfig {
+    id: number;
+    email: string;
+    activo: boolean;
+    createdAt: string;
 }
 
 export default function MinimosPage() {
@@ -29,6 +36,16 @@ export default function MinimosPage() {
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editValue, setEditValue] = useState<string>("");
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+    // Email modal state
+    const [showEmailModal, setShowEmailModal] = useState(false);
+    const [emails, setEmails] = useState<EmailConfig[]>([]);
+    const [newEmail, setNewEmail] = useState("");
+    const [loadingEmails, setLoadingEmails] = useState(false);
+    const [sendingTest, setSendingTest] = useState(false);
+    const [addingEmail, setAddingEmail] = useState(false);
+    const [deletingEmail, setDeletingEmail] = useState<string | null>(null);
 
     // Sorting state
     const [sortConfig, setSortConfig] = useState<{ column: string | null; direction: "asc" | "desc" | null }>({ column: null, direction: null });
@@ -55,9 +72,28 @@ export default function MinimosPage() {
         }
     }, [page, pageSize, search, filter]);
 
+    const fetchEmails = useCallback(async () => {
+        setLoadingEmails(true);
+        try {
+            const res = await fetch('/api/notifications/emails');
+            const data = await res.json();
+            setEmails(data.emails || []);
+        } catch (error) {
+            console.error("Error fetching emails:", error);
+        } finally {
+            setLoadingEmails(false);
+        }
+    }, []);
+
     useEffect(() => {
         fetchProductos();
     }, [fetchProductos]);
+
+    useEffect(() => {
+        if (showEmailModal) {
+            fetchEmails();
+        }
+    }, [showEmailModal, fetchEmails]);
 
     useEffect(() => {
         if (successMessage) {
@@ -65,6 +101,13 @@ export default function MinimosPage() {
             return () => clearTimeout(timer);
         }
     }, [successMessage]);
+
+    useEffect(() => {
+        if (errorMessage) {
+            const timer = setTimeout(() => setErrorMessage(null), 5000);
+            return () => clearTimeout(timer);
+        }
+    }, [errorMessage]);
 
     const handleEdit = (producto: Producto) => {
         setEditingId(producto.id);
@@ -123,13 +166,91 @@ export default function MinimosPage() {
         });
     };
 
+    // Email handlers
+    const handleAddEmail = async () => {
+        if (!newEmail.trim() || !newEmail.includes('@')) {
+            setErrorMessage('Email inválido');
+            return;
+        }
+
+        setAddingEmail(true);
+        try {
+            const res = await fetch('/api/notifications/emails', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: newEmail.trim() })
+            });
+
+            const data = await res.json();
+
+            if (res.ok) {
+                setEmails(prev => [data.email, ...prev]);
+                setNewEmail('');
+                setSuccessMessage('Email agregado correctamente');
+            } else {
+                setErrorMessage(data.error || 'Error al agregar email');
+            }
+        } catch (error) {
+            console.error('Error adding email:', error);
+            setErrorMessage('Error al agregar email');
+        } finally {
+            setAddingEmail(false);
+        }
+    };
+
+    const handleDeleteEmail = async (email: string) => {
+        setDeletingEmail(email);
+        try {
+            const res = await fetch(`/api/notifications/emails/${encodeURIComponent(email)}`, {
+                method: 'DELETE'
+            });
+
+            if (res.ok) {
+                setEmails(prev => prev.filter(e => e.email !== email));
+                setSuccessMessage('Email eliminado');
+            } else {
+                const data = await res.json();
+                setErrorMessage(data.error || 'Error al eliminar email');
+            }
+        } catch (error) {
+            console.error('Error deleting email:', error);
+            setErrorMessage('Error al eliminar email');
+        } finally {
+            setDeletingEmail(null);
+        }
+    };
+
+    const handleSendTest = async (email: string) => {
+        setSendingTest(true);
+        try {
+            const res = await fetch('/api/notifications/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email })
+            });
+
+            const data = await res.json();
+
+            if (res.ok) {
+                setSuccessMessage(`Email de prueba enviado a ${email}`);
+            } else {
+                setErrorMessage(data.error || 'Error al enviar email de prueba');
+            }
+        } catch (error) {
+            console.error('Error sending test:', error);
+            setErrorMessage('Error al enviar email de prueba');
+        } finally {
+            setSendingTest(false);
+        }
+    };
+
     const sortedProductos = useMemo(() => {
         const { column, direction } = sortConfig;
         if (!column || !direction) return productos;
 
         return [...productos].sort((a, b) => {
-            let aVal: any = a[column as keyof Producto];
-            let bVal: any = b[column as keyof Producto];
+            let aVal: unknown = a[column as keyof Producto];
+            let bVal: unknown = b[column as keyof Producto];
 
             // Handle potential null/undefined
             if (aVal === null || aVal === undefined) aVal = "";
@@ -167,6 +288,15 @@ export default function MinimosPage() {
                                 </p>
                             </div>
                         </div>
+                        {/* Notification Config Button */}
+                        <button
+                            onClick={() => setShowEmailModal(true)}
+                            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md hover:shadow-lg"
+                        >
+                            <Bell className="h-4 w-4" />
+                            <span className="hidden sm:inline">Configurar Notificaciones</span>
+                            <span className="sm:hidden">Alertas</span>
+                        </button>
                     </div>
                 </header>
 
@@ -175,6 +305,154 @@ export default function MinimosPage() {
                     <div className="fixed top-4 right-4 z-50 bg-emerald-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
                         <Save className="h-4 w-4" />
                         {successMessage}
+                    </div>
+                )}
+
+                {/* Error Message Toast */}
+                {errorMessage && (
+                    <div className="fixed top-4 right-4 z-50 bg-red-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+                        <X className="h-4 w-4" />
+                        {errorMessage}
+                    </div>
+                )}
+
+                {/* Email Configuration Modal */}
+                {showEmailModal && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+                            {/* Modal Header */}
+                            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-white/20 rounded-lg">
+                                            <Mail className="h-5 w-5 text-white" />
+                                        </div>
+                                        <div>
+                                            <h2 className="text-lg font-semibold text-white">
+                                                Notificaciones por Email
+                                            </h2>
+                                            <p className="text-sm text-blue-100">
+                                                Alertas diarias a las 17:00 (hora Chile)
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => setShowEmailModal(false)}
+                                        className="p-1.5 hover:bg-white/20 rounded-lg transition-colors"
+                                    >
+                                        <X className="h-5 w-5 text-white" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Modal Content */}
+                            <div className="p-6">
+                                {/* Add Email Form */}
+                                <div className="mb-6">
+                                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                                        Agregar destinatario
+                                    </label>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="email"
+                                            value={newEmail}
+                                            onChange={(e) => setNewEmail(e.target.value)}
+                                            onKeyDown={(e) => e.key === 'Enter' && handleAddEmail()}
+                                            placeholder="correo@ejemplo.com"
+                                            className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                        <button
+                                            onClick={handleAddEmail}
+                                            disabled={addingEmail}
+                                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+                                        >
+                                            <Plus className="h-4 w-4" />
+                                            Agregar
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Email List */}
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                                        Destinatarios configurados
+                                    </label>
+                                    <div className="border border-slate-200 rounded-lg overflow-hidden">
+                                        {loadingEmails ? (
+                                            <div className="p-8 text-center text-slate-500">
+                                                Cargando...
+                                            </div>
+                                        ) : emails.length === 0 ? (
+                                            <div className="p-8 text-center text-slate-500">
+                                                <Mail className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                                                <p>No hay emails configurados</p>
+                                                <p className="text-xs mt-1">Agrega un email para recibir alertas de stock bajo</p>
+                                            </div>
+                                        ) : (
+                                            <ul className="divide-y divide-slate-100 max-h-60 overflow-y-auto">
+                                                {emails.map((emailConfig) => (
+                                                    <li
+                                                        key={emailConfig.id}
+                                                        className="flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors"
+                                                    >
+                                                        <div className="flex items-center gap-3">
+                                                            <div className={`w-2 h-2 rounded-full ${emailConfig.activo ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                                                            <span className="text-sm text-slate-700">
+                                                                {emailConfig.email}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex items-center gap-1">
+                                                            <button
+                                                                onClick={() => handleSendTest(emailConfig.email)}
+                                                                disabled={sendingTest}
+                                                                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
+                                                                title="Enviar prueba"
+                                                            >
+                                                                <Send className="h-4 w-4" />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDeleteEmail(emailConfig.email)}
+                                                                disabled={deletingEmail === emailConfig.email}
+                                                                className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                                                                title="Eliminar"
+                                                            >
+                                                                <Trash2 className="h-4 w-4" />
+                                                            </button>
+                                                        </div>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Info Box */}
+                                <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                                    <div className="flex gap-3">
+                                        <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                                        <div className="text-sm text-amber-800">
+                                            <p className="font-medium mb-1">¿Cómo funciona?</p>
+                                            <p>
+                                                Todos los días a las <strong>17:00 (hora Chile)</strong>,
+                                                el sistema verifica qué productos tienen stock por debajo
+                                                del mínimo configurado y envía un email de alerta a los
+                                                destinatarios listados.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200">
+                                <button
+                                    onClick={() => setShowEmailModal(false)}
+                                    className="w-full px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors font-medium"
+                                >
+                                    Cerrar
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 )}
 
@@ -391,4 +669,3 @@ export default function MinimosPage() {
         </div>
     );
 }
-

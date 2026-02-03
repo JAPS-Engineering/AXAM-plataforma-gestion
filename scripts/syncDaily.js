@@ -33,7 +33,7 @@ async function syncNewProducts() {
             return { created: 0, updated: 0 };
         }
 
-        // 1.5 Filtrar por White List (Lista Mayorista ID 652)
+        // 1.5 Filtrar por White List (Lista Mayorista ID 89)
         const whiteList = await getWhiteListSKUs();
         let productsToProcess = erpProducts;
 

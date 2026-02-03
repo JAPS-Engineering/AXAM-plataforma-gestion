@@ -253,3 +253,14 @@ model Vendedor {
 
   @@map("vendedores")
 }
+
+// Destinatarios de notificaciones por email
+model EmailNotificacion {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  tipo      String   @default("STOCK_BAJO") // STOCK_BAJO, etc.
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("email_notificaciones")
+}

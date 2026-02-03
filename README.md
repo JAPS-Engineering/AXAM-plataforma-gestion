@@ -185,3 +185,62 @@ Los scripts generan logs detallados en la consola mostrando:
 - Productos procesados
 - FAVEs procesadas
 - Errores y advertencias
+
+## Notificaciones por Email - Stock Bajo
+
+El sistema incluye alertas automáticas por email cuando productos tienen stock por debajo del mínimo configurado.
+
+### ¿Cómo funciona?
+
+Todos los días a las **17:00 (hora Chile)**, el sistema:
+1. Sincroniza las ventas actuales
+2. Consulta productos que tienen stock mínimo configurado
+3. Detecta cuáles tienen `stockActual < stockMinimo`
+4. Envía un email de alerta a los destinatarios configurados
+
+### Configuración de Email (Gmail)
+
+Para activar las notificaciones necesitas configurar una cuenta Gmail con contraseña de aplicación:
+
+1. **Crear/usar cuenta Gmail** dedicada
+2. **Activar verificación en 2 pasos** en la cuenta
+3. **Generar contraseña de aplicación**: https://myaccount.google.com/apppasswords
+4. **Configurar variables en `.env`**:
+
+```env
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USER=tu-correo@gmail.com
+EMAIL_PASSWORD=xxxx-xxxx-xxxx-xxxx
+EMAIL_FROM="Alertas AXAM <tu-correo@gmail.com>"
+```
+
+### Configurar Destinatarios
+
+Desde la interfaz web:
+1. Ir a `/minimos` (Configuración de Stock Mínimo)
+2. Click en botón **"Configurar Notificaciones"**
+3. Agregar emails de destinatarios
+4. Usar el ícono ✈️ para enviar email de prueba
+
+### API de Notificaciones
+
+| Endpoint | Método | Descripción |
+|----------|--------|-------------|
+| `/api/notifications/emails` | GET | Lista emails configurados |
+| `/api/notifications/emails` | POST | Agregar email `{ email: "..." }` |
+| `/api/notifications/emails/:email` | DELETE | Eliminar email |
+| `/api/notifications/test` | POST | Enviar prueba `{ email: "..." }` |
+| `/api/notifications/status` | GET | Estado del servicio |
+
+### Ejecutar Alerta Manualmente
+
+```bash
+node scripts/alertaStockBajo.js
+```
+
+### Tareas CRON Programadas
+
+El servidor programa automáticamente:
+- **01:00 AM (Chile)**: Sincronización diaria de ventas
+- **17:00 PM (Chile)**: Alerta de stock bajo

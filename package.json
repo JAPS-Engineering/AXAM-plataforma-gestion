@@ -46,6 +46,7 @@
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "node-cron": "^4.2.1",
+    "nodemailer": "^7.0.13",
     "prisma": "^5.22.0"
   },
   "devDependencies": {

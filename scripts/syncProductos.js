@@ -127,7 +127,7 @@ function saveProduct(db, sku, descripcion, familia = '', proveedor = '') {
  */
 async function getWhiteListSKUs() {
     try {
-        logInfo('Obteniendo Lista Mayorista (ID 652) para filtrar productos...');
+        logInfo('Obteniendo Lista Mayorista (ID 89) para filtrar productos...');
         const headers = await getAuthHeaders();
         // Nota: Usamos dets=1 para obtener productos
         const url = `${ERP_BASE_URL}/pricelist/${RUT_EMPRESA}/?dets=1`;
@@ -135,16 +135,16 @@ async function getWhiteListSKUs() {
         const response = await axios.get(url, { headers });
         const data = response.data.data || response.data || [];
 
-        // Buscar lista 652 (o la que coincida)
+        // Buscar lista 89 (o la que coincida)
         const targetList = data.find(l =>
-            String(l.codigo) === '652' ||
-            String(l.id) === '652' ||
-            String(l.cod_lista) === '652' ||
-            (l.descripcion && l.descripcion.includes('652'))
+            String(l.codigo) === '89' ||
+            String(l.id) === '89' ||
+            String(l.cod_lista) === '89' ||
+            (l.descripcion && l.descripcion.includes('89'))
         );
 
         if (!targetList) {
-            throw new Error('No se encontró la Lista de Precios 652');
+            throw new Error('No se encontró la Lista de Precios 89');
         }
 
         const items = targetList.produtos || targetList.productos || targetList.detalles || targetList.items || targetList.products || [];
@@ -168,7 +168,7 @@ async function getWhiteListSKUs() {
  * Función principal
  */
 async function main() {
-    logSection('SINCRONIZACIÓN DE PRODUCTOS (FILTRADO POR LISTA 652)');
+    logSection('SINCRONIZACIÓN DE PRODUCTOS (FILTRADO POR LISTA 89)');
 
     const db = getDatabase();
 
@@ -236,7 +236,7 @@ async function main() {
                 .forEach(([f, count]) => logInfo(`  - ${f}: ${count} productos`));
         }
 
-        logSuccess(`Total en White List (Lista 652): ${whiteList.size}`);
+        logSuccess(`Total en White List (Lista 89): ${whiteList.size}`);
         logInfo(`Total en ERP: ${allProducts.length}`);
         logInfo(`Procesados (Coincidencia): ${nuevos + actualizados}`);
         logInfo(`  - Nuevos: ${nuevos}`);
@@ -248,6 +248,51 @@ async function main() {
         logInfo(`Total de productos en base de datos: ${totalBD.count}`);
 
         logSuccess('\n✅ Sincronización completada con Éxito\n');
+
+        // 4. LIMPIEZA DE PRODUCTOS ANTIGUOS (NO EN LISTA 89)
+        logSection('LIMPIEZA DE BASE DE DATOS');
+        logInfo('Verificando productos obsoletos en la base de datos...');
+
+        // Obtener todos los SKUs de la base de datos
+        const dbProducts = db.prepare('SELECT sku FROM productos').all();
+        const dbSkus = new Set(dbProducts.map(p => p.sku));
+
+        logInfo(`Total productos en DB: ${dbSkus.size}`);
+
+        const skusToDelete = [];
+        for (const sku of dbSkus) {
+            if (!whiteList.has(sku)) {
+                skusToDelete.push(sku);
+            }
+        }
+
+        if (skusToDelete.length > 0) {
+            logWarning(`⚠️  Se encontraron ${skusToDelete.length} productos en la BD que NO están en la Lista 89.`);
+            logWarning('⏳ Eliminando productos obsoletos y su historial (Cascade)...');
+
+            const deleteStmt = db.prepare('DELETE FROM productos WHERE sku = ?');
+
+            // Ejecutar en transacción para seguridad y velocidad
+            const deleteTransaction = db.transaction((skus) => {
+                let deletedCount = 0;
+                for (const sku of skus) {
+                    deleteStmt.run(sku);
+                    deletedCount++;
+                    if (deletedCount % 100 === 0) process.stdout.write(`\rEliminando: ${deletedCount}/${skus.length}`);
+                }
+                console.log(''); // Nueva línea
+                return deletedCount;
+            });
+
+            const totalDeleted = deleteTransaction(skusToDelete);
+            logSuccess(`🗑️  Eliminados ${totalDeleted} productos obsoletos correctamente.`);
+        } else {
+            logSuccess('✨ La base de datos está limpia. Todos los productos pertenecen a la Lista 89.');
+        }
+
+        // Mostrar estadísticas finales
+        const finalCount = db.prepare('SELECT COUNT(*) as count FROM productos').get();
+        logInfo(`Total productos finales en DB: ${finalCount.count}`);
 
     } catch (error) {
         logError(`Error en la sincronización: ${error.message}`);

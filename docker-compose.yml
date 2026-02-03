@@ -16,6 +16,11 @@ services:
       - ERP_USERNAME=${ERP_USERNAME}
       - ERP_PASSWORD=${ERP_PASSWORD}
       - RUT_EMPRESA=${RUT_EMPRESA}
+      - EMAIL_HOST=${EMAIL_HOST}
+      - EMAIL_PORT=${EMAIL_PORT}
+      - EMAIL_USER=${EMAIL_USER}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD}
+      - EMAIL_FROM=${EMAIL_FROM}
     volumes:
       - ./data:/app/data
     networks:

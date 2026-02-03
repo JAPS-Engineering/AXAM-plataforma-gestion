@@ -40,6 +40,8 @@ const ventasRoutes = require('./routes/ventas');
 const targetRoutes = require('./routes/targets');
 const syncRoutes = require('./routes/sync');
 const vendedoresRoutes = require('./routes/vendedores');
+const notificationsRoutes = require('./routes/notifications');
+const { ejecutarAlertaStockBajo } = require('./scripts/alertaStockBajo');
 
 app.use('/api/productos', productosRoutes);
 app.use('/api/pedidos', pedidosRoutes);
@@ -50,6 +52,7 @@ app.use('/api/ventas', ventasRoutes);
 app.use('/api/targets', targetRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/api/vendedores', vendedoresRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 // Ruta de salud
 app.get('/health', (req, res) => {
@@ -186,9 +189,22 @@ async function startServer() {
             } catch (error) {
                 logError(`❌ Error en sincronización diaria programada: ${error.message}`);
             }
-        });
+        }, { timezone: 'America/Santiago' });
 
-        logInfo('🕒 Tarea CRON programada: Sincronización diaria a las 01:00 AM');
+        // Programar alerta de stock bajo a las 17:00 (5 PM) hora Chile
+        cron.schedule('0 17 * * *', async () => {
+            logInfo('⏰ Ejecutando alerta de stock bajo programada (17:00 Chile)...');
+            try {
+                await ejecutarAlertaStockBajo();
+                logSuccess('✅ Alerta de stock bajo completada');
+            } catch (error) {
+                logError(`❌ Error en alerta de stock bajo: ${error.message}`);
+            }
+        }, { timezone: 'America/Santiago' });
+
+        logInfo('🕒 Tareas CRON programadas:');
+        logInfo('   - Sincronización diaria: 01:00 AM (Chile)');
+        logInfo('   - Alerta stock bajo: 17:00 PM (Chile)');
 
         const server = app.listen(PORT, () => {
             logSuccess(`🚀 Servidor iniciado en http://localhost:${PORT}`);

@@ -326,27 +326,27 @@ async function getCurrentStock() {
  * Obtener información de todos los productos
  */
 /**
- * Obtener SKUs permitidos de la Lista Mayorista (ID 652)
+ * Obtener SKUs permitidos de la Lista Mayorista (ID 89)
  */
 async function getWhiteListSKUs() {
     try {
-        logInfo('Obteniendo Lista Mayorista (ID 652) para filtrar productos...');
+        logInfo('Obteniendo Lista Mayorista (ID 89) para filtrar productos...');
         const headers = await getAuthHeaders();
         const url = `${ERP_BASE_URL}/pricelist/${RUT_EMPRESA}/?dets=1`;
 
         const response = await axios.get(url, { headers, timeout: 60000 });
         const data = response.data.data || response.data || [];
 
-        // Buscar lista 652
+        // Buscar lista 89
         const targetList = data.find(l =>
-            String(l.codigo) === '652' ||
-            String(l.id) === '652' ||
-            String(l.cod_lista) === '652' ||
-            (l.descripcion && l.descripcion.includes('652'))
+            String(l.codigo) === '89' ||
+            String(l.id) === '89' ||
+            String(l.cod_lista) === '89' ||
+            (l.descripcion && l.descripcion.includes('89'))
         );
 
         if (!targetList) {
-            logWarning('No se encontró la Lista de Precios 652. Se permitirá todo el catálogo (Warning).');
+            logWarning('No se encontró la Lista de Precios 89. Se permitirá todo el catálogo (Warning).');
             return null; // Retornar null para indicar que no hay filtro
         }
 
