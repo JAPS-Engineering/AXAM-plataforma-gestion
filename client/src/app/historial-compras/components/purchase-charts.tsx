@@ -287,7 +287,7 @@ export function PurchaseCharts({ startDate, endDate }: PurchaseChartsProps) {
             {/* Seccion 3: Tendencias */}
             <div className="space-y-6">
                 <TendenciasChart
-                    title="Tendencias de Compra por Familia"
+                    title="Gastos Mensuales por Familia"
                     data={{ tendencias: chartData.tendencias, familias: groupedData.allEntities }}
                     selectedFamilies={selectedFamilies}
                     allEntities={groupedData.allEntities}

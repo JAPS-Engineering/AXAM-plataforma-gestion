@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { fetchVentasResumen, fetchGraficosAvanzados, fetchVentasTendencias } from "@/lib/api";
 import { Sidebar } from "@/components/sidebar";
 import { useState, useMemo, useEffect, useRef } from "react";
@@ -78,11 +78,13 @@ export default function GraficosVentasPage() {
     const { data: advancedData, isLoading: isLoadingAdv } = useQuery({
         queryKey: ["graficos-avanzados", computedAdvancedParams],
         queryFn: () => fetchGraficosAvanzados(computedAdvancedParams),
+        placeholderData: keepPreviousData
     });
 
     const { data: tendencias, isLoading: isLoadingTrends } = useQuery({
         queryKey: ["ventas-tendencias", computedAdvancedParams],
         queryFn: () => fetchVentasTendencias(computedAdvancedParams, marca || undefined),
+        placeholderData: keepPreviousData
     });
 
     const isLoadingAll = isLoading || isLoadingAdv || isLoadingTrends;

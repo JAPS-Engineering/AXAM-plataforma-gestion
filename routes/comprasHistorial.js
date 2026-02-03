@@ -650,27 +650,45 @@ router.get('/graficos', async (req, res) => {
         // Agrupar por Mes-Año y Familia
         const tendenciasMap = new Map();
 
+        // Usar comprasPeriodo que ya tiene el filtro de fechas correcto para mostrar tendencias del periodo seleccionado?
+        // O usar comprasAnuales?
+        // Generalmente "Tendencias" muestra el periodo visualizado. Usaremos comprasPeriodo.
+        // Pero comprasPeriodo podría estar filtrado si el usuario eligió un rango corto.
+        // Si el usuario elige "Últimos 12 meses", comprasPeriodo tiene eso.
+
+        const monthNames = ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SEP", "OCT", "NOV", "DIC"];
+
         for (const c of comprasPeriodo) {
             const d = new Date(c.fecha);
             const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            const label = `${monthNames[d.getMonth()]} ${d.getFullYear()}`;
+
             const fam = c.producto?.familia || 'Sin Familia';
             const monto = c.cantidad * c.precioUnitario;
 
             if (!tendenciasMap.has(key)) {
                 tendenciasMap.set(key, {
-                    periodo: key,
+                    label: label,
                     ano: d.getFullYear(),
-                    mes: d.getMonth() + 1,
-                    familias: {}
+                    mes: d.getMonth() + 1
                 });
             }
             const t = tendenciasMap.get(key);
-            if (!t.familias[fam]) t.familias[fam] = 0;
-            t.familias[fam] += monto;
+
+            // Inicializar objeto de familia si no existe
+            if (!t[fam]) {
+                t[fam] = { monto: 0, cantidad: 0 };
+            }
+
+            t[fam].monto += monto;
+            t[fam].cantidad += c.cantidad;
         }
 
         const tendencias = Array.from(tendenciasMap.values())
-            .sort((a, b) => a.periodo.localeCompare(b.periodo));
+            .sort((a, b) => {
+                if (a.ano !== b.ano) return a.ano - b.ano;
+                return a.mes - b.mes;
+            });
 
 
         // --- Respuesta ---
