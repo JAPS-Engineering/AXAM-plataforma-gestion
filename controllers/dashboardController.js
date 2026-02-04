@@ -429,7 +429,7 @@ async function syncStream(req, res) {
 
         // 2. Datos mes actual (Ventas + Stock) - incluir ventas hasta AHORA
         sendEvent({ step: 'data', message: 'Obteniendo ventas y stock del mes actual...' });
-        const dataStats = await syncCurrentMonthData(true);  // true = incluir ventas hasta ahora (incluyendo hoy)
+        const dataStats = await syncCurrentMonthData(false);  // false = SOLO hasta ayer (para evitar doble conteo con live dashboard)
         sendEvent({
             step: 'data_done',
             message: `${dataStats.productosConVentas} productos con ventas, ${dataStats.updated} actualizados`

@@ -435,7 +435,7 @@ export interface ComprasGraficosResponse {
     tendencias: any[]; // Usar estructura similar a ventas tendencias internamente o adaptar
 }
 
-export async function fetchComprasGraficos(params?: { fechaInicio?: string; fechaFin?: string; familia?: string; proveedor?: string; yearRef?: number; yearComp?: number }): Promise<ComprasGraficosResponse> {
+export async function fetchComprasGraficos(params?: { fechaInicio?: string; fechaFin?: string; familia?: string; proveedor?: string; yearRef?: number; yearComp?: number; origen?: string }): Promise<ComprasGraficosResponse> {
     const query = new URLSearchParams();
     if (params?.fechaInicio) query.append("fechaInicio", params.fechaInicio);
     if (params?.fechaFin) query.append("fechaFin", params.fechaFin);
@@ -443,6 +443,7 @@ export async function fetchComprasGraficos(params?: { fechaInicio?: string; fech
     if (params?.proveedor) query.append("proveedor", params.proveedor);
     if (params?.yearRef) query.append("yearRef", params.yearRef.toString());
     if (params?.yearComp) query.append("yearComp", params.yearComp.toString());
+    if (params?.origen) query.append("origen", params.origen);
 
     const { data } = await api.get<ComprasGraficosResponse>(`/compras/graficos?${query.toString()}`);
     return data;

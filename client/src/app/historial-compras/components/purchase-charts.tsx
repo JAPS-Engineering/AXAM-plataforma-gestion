@@ -12,6 +12,7 @@ import { TendenciasTable } from "@/components/ventas/TendenciasTable";
 interface PurchaseChartsProps {
     startDate: Date | undefined;
     endDate: Date | undefined;
+    origen?: string;
 }
 
 interface FamilyGroup {
@@ -21,7 +22,7 @@ interface FamilyGroup {
     color: string;
 }
 
-export function PurchaseCharts({ startDate, endDate }: PurchaseChartsProps) {
+export function PurchaseCharts({ startDate, endDate, origen }: PurchaseChartsProps) {
     // --- Year State ---
     const currentYear = new Date().getFullYear();
     const [yearRef, setYearRef] = useState<number>(currentYear);
@@ -40,9 +41,10 @@ export function PurchaseCharts({ startDate, endDate }: PurchaseChartsProps) {
             fechaInicio: startDate ? formatDate(startDate) : undefined,
             fechaFin: endDate ? formatDate(endDate) : undefined,
             yearRef,
-            yearComp
+            yearComp,
+            origen
         };
-    }, [startDate, endDate, yearRef, yearComp]);
+    }, [startDate, endDate, yearRef, yearComp, origen]);
 
     const { data: chartData, isLoading, isFetching, error } = useQuery({
         queryKey: ["compras-graficos", apiParams],

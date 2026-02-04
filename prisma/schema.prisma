@@ -182,13 +182,16 @@ model CompraHistorica {
   proveedor       String?
   rutProveedor    String?  @map("rut_proveedor")
   folio           String?  // Nro Factura
+  tipoDoc         String   @default("FACE") @map("tipo_doc") // 'FACE' | 'FIM'
   createdAt       DateTime @default(now()) @map("created_at")
 
   producto Producto @relation(fields: [productoId], references: [id], onDelete: Cascade)
 
+  @@unique([productoId, folio, fecha])
   @@index([productoId])
   @@index([fecha])
   @@index([proveedor])
+  @@index([tipoDoc])
   @@map("compras_historicas")
 }
 

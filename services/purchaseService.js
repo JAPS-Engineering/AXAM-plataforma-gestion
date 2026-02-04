@@ -124,6 +124,7 @@ function extractProductsFromPurchase(document) {
                 proveedor: proveedor.trim(),
                 rutProveedor: rutProveedor.trim(),
                 folio,
+                tipoDoc: document.tipo_doc || 'FACE', // Agregar tipo de documento
                 fecha
             });
         }
@@ -140,14 +141,17 @@ async function getAllPurchases(fechaInicio, fechaFin) {
     logInfo(`Obteniendo compras (FACE + DIN) del ${format(fechaInicio, 'dd/MM/yyyy')} al ${format(fechaFin, 'dd/MM/yyyy')}...`);
 
     // Fetch both types in parallel
-    const [faceDocs, dinDocs] = await Promise.all([
+    // FACE = Facturas Nacionales, FIM = Facturas Importación
+    const [faceDocs, fimDocs] = await Promise.all([
         getPurchaseDocuments(fechaInicio, fechaFin, 1, 'FACE'),
-        getPurchaseDocuments(fechaInicio, fechaFin, 1, 'DIN')
+        getPurchaseDocuments(fechaInicio, fechaFin, 1, 'FIM')
     ]);
 
-    const documents = [...faceDocs, ...dinDocs];
+    // DIN (Declaraciones de Ingreso) ya no se usan para costos, usamos FIM.
 
-    logSuccess(`  FACE: ${faceDocs.length}, DIN: ${dinDocs.length} documentos`);
+    const documents = [...faceDocs, ...fimDocs];
+
+    logSuccess(`  FACE: ${faceDocs.length}, FIM: ${fimDocs.length} documentos`);
 
     const allProducts = [];
 

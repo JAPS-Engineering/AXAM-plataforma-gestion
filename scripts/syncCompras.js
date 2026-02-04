@@ -51,79 +51,127 @@ async function processPurchases(products, year, month) {
         logInfo(`Filtrado: ${filteredProducts.length} compras de productos permitidos (de ${products.length})`);
     }
 
-    // Obtener mapa de SKU -> productoId
-    const skus = [...new Set(filteredProducts.map(p => p.sku))];
+    // Obtener mapa de SKU -> [productos] (soporta múltiples variantes para el mismo SKU base)
+    const skusToFetch = new Set();
+    filteredProducts.forEach(p => {
+        skusToFetch.add(p.sku);
+        skusToFetch.add(p.sku + 'U'); // Agregar variante con 'U' por si acaso
+    });
+
+    // ---------------------------------------------------------
+    // AGREGACIÓN PREVIA: Unificar líneas del mismo producto en el mismo folio
+    // Esto evita error de Unique Constraint si una factura tiene 2 líneas del mismo SKU
+    // ---------------------------------------------------------
+    const aggregatedProducts = new Map(); // key: sku-folio -> { ...product, cantidad, totalMonto }
+
+    for (const p of filteredProducts) {
+        // Usar una clave única compuesta
+        const key = `${p.sku}|${p.folio || 'S/F'}|${p.fecha.toISOString()}`;
+
+        if (!aggregatedProducts.has(key)) {
+            aggregatedProducts.set(key, { ...p, montoTotal: p.cantidad * p.precioUnitario });
+        } else {
+            const existing = aggregatedProducts.get(key);
+            existing.cantidad += p.cantidad;
+            existing.montoTotal += (p.cantidad * p.precioUnitario);
+            // Mantener otros metadatos del primero
+        }
+    }
+
+    // Recalcular precio unitario promedio y convertir a array
+    const uniqueProductsList = Array.from(aggregatedProducts.values()).map(p => ({
+        ...p,
+        precioUnitario: p.cantidad > 0 ? p.montoTotal / p.cantidad : 0
+    }));
+
+    logInfo(`Agregación: ${filteredProducts.length} líneas unificadas en ${uniqueProductsList.length} registros únicos.`);
+
     const existingProducts = await prisma.producto.findMany({
-        where: { sku: { in: skus } },
+        where: { sku: { in: Array.from(skusToFetch) } },
         select: { id: true, sku: true, precioUltimaCompra: true, fechaUltimaCompra: true }
     });
 
-    const skuToProduct = new Map();
-    existingProducts.forEach(p => skuToProduct.set(p.sku, p));
+    // Mapear tanto el SKU exacto como la versión sin 'U' (si termina en U) al mismo producto
+    const skuToProducts = new Map(); // SKU -> Array de productos
+    existingProducts.forEach(p => {
+        // Mapeo directo
+        if (!skuToProducts.has(p.sku)) skuToProducts.set(p.sku, []);
+        skuToProducts.get(p.sku).push(p);
+
+        // Si el producto en DB termina en U, también mapearlo al SKU base (sin U)
+        if (p.sku.endsWith('U')) {
+            const baseSku = p.sku.slice(0, -1);
+            if (!skuToProducts.has(baseSku)) skuToProducts.set(baseSku, []);
+            skuToProducts.get(baseSku).push(p);
+        }
+    });
 
     let processed = 0;
     let updated = 0;
-    const productsToUpdateCost = new Map(); // sku -> { precio, fecha }
+    const productsToUpdateCost = new Map(); // productId -> { precio, fecha }
 
     // Agrupar compras por producto para inserción batch
-    for (const purchase of filteredProducts) {
-        const product = skuToProduct.get(purchase.sku);
-        if (!product) {
+    // Agrupar compras por producto para inserción batch
+    // Usamos la lista ya agregada/unificada
+    for (const purchase of uniqueProductsList) {
+        const matchingProducts = skuToProducts.get(purchase.sku) || [];
+        if (matchingProducts.length === 0) {
             // Producto no existe en catálogo, skip
             continue;
         }
 
+        // 1. Insertar Historial (SOLO UNA VEZ por línea de factura)
+        // Preferimos el producto con match exacto de SKU. Si no, usamos el primero encontrado.
+        let primaryProduct = matchingProducts.find(p => p.sku === purchase.sku);
+        if (!primaryProduct) primaryProduct = matchingProducts[0];
+
         try {
-            // Insertar en CompraHistorica
             await prisma.compraHistorica.create({
                 data: {
-                    productoId: product.id,
+                    productoId: primaryProduct.id, // Solo al principal
                     fecha: purchase.fecha,
                     cantidad: purchase.cantidad,
                     precioUnitario: purchase.precioUnitario,
                     proveedor: purchase.proveedor || null,
                     rutProveedor: purchase.rutProveedor || null,
-                    folio: purchase.folio || null
+                    folio: purchase.folio || null,
+                    tipoDoc: purchase.tipoDoc || 'FACE'
                 }
             });
             processed++;
+        } catch (error) {
+            // Loguear error específico de constraint para debug
+            if (error.code === 'P2002') {
+                logWarning(`Duplicado ignorado (Constraint): SKU ${primaryProduct.sku}, Folio ${purchase.folio}`);
+            } else {
+                logError(`Error insertando compra SKU ${purchase.sku}: ${error.message}`);
+            }
+        }
 
+        // 2. Actualizar Costos (PARA TODOS los variantes)
+        // Aunque el historial quede solo en uno, el costo actualizado debe reflejarse en todos (ej: unidad y caja)
+        for (const product of matchingProducts) {
             // Rastrear el precio más reciente para actualizar Producto
-            const existing = productsToUpdateCost.get(purchase.sku);
+            const existing = productsToUpdateCost.get(product.id);
             if (!existing || purchase.fecha > existing.fecha) {
-                productsToUpdateCost.set(purchase.sku, {
+                productsToUpdateCost.set(product.id, {
                     precio: purchase.precioUnitario,
                     fecha: purchase.fecha
                 });
-            }
-
-        } catch (error) {
-            // Posible duplicado, ignorar
-            if (!error.message.includes('Unique constraint')) {
-                logWarning(`Error al guardar compra ${purchase.sku}: ${error.message}`);
             }
         }
     }
 
     // Actualizar precioUltimaCompra en productos
-    for (const [sku, data] of productsToUpdateCost) {
-        const product = skuToProduct.get(sku);
-        if (!product) continue;
-
-        // Solo actualizar si la fecha es más reciente
-        const shouldUpdate = !product.fechaUltimaCompra ||
-            new Date(data.fecha) > new Date(product.fechaUltimaCompra);
-
-        if (shouldUpdate) {
-            await prisma.producto.update({
-                where: { id: product.id },
-                data: {
-                    precioUltimaCompra: data.precio,
-                    fechaUltimaCompra: data.fecha
-                }
-            });
-            updated++;
-        }
+    for (const [productId, data] of productsToUpdateCost) {
+        await prisma.producto.update({
+            where: { id: productId },
+            data: {
+                precioUltimaCompra: data.precio,
+                fechaUltimaCompra: data.fecha
+            }
+        });
+        updated++;
     }
 
     // Registrar en SyncLog
@@ -155,6 +203,21 @@ async function syncYesterday() {
     const month = yesterday.getMonth() + 1;
 
     try {
+        // 1. Eliminar datos existentes de ayer (Overwrite)
+        const startOfDay = new Date(yesterday);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(yesterday);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        await prisma.compraHistorica.deleteMany({
+            where: {
+                fecha: {
+                    gte: startOfDay,
+                    lte: endOfDay
+                }
+            }
+        });
+
         const { products } = await getDailyPurchases(yesterday);
         return await processPurchases(products, year, month);
     } catch (error) {
@@ -188,7 +251,23 @@ async function syncCurrentMonth() {
 async function syncMonth(year, month) {
     logSection(`SINCRONIZANDO COMPRAS DE ${month}/${year}`);
 
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0); // Último día del mes
+    endDate.setHours(23, 59, 59, 999);
+
     try {
+        // 1. Eliminar datos existentes del mes (Overwrite Strategy)
+        const deleted = await prisma.compraHistorica.deleteMany({
+            where: {
+                fecha: {
+                    gte: startDate,
+                    lte: endDate
+                }
+            }
+        });
+        logInfo(`🗑️  Eliminados ${deleted.count} registros antiguos de ${month}/${year}`);
+
+        // 2. Obtener y procesar nuevos datos
         const { products } = await getMonthlyPurchases(year, month);
         return await processPurchases(products, year, month);
     } catch (error) {

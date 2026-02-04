@@ -21,6 +21,7 @@ interface Step {
 const INITIAL_STEPS: Step[] = [
     { id: "products", label: "Catálogo de Productos", status: "pending" },
     { id: "data", label: "Ventas y Stock del Mes", status: "pending" },
+    { id: "purchases", label: "Compras del Mes", status: "pending" },
 ];
 
 const TIMEOUT_MS = 45000; // 45 seconds timeout
@@ -107,13 +108,22 @@ export function SyncModal({ isOpen, onClose }: SyncModalProps) {
                         updateStep("products", "success", data.message);
                         break;
 
-
-
                     case "data":
                         updateStep("data", "loading", data.message);
                         break;
                     case "data_done":
                         updateStep("data", "success", data.message);
+                        break;
+
+                    case "purchases":
+                        updateStep("purchases", "loading", data.message);
+                        break;
+                    case "purchases_done":
+                        updateStep("purchases", "success", data.message);
+                        break;
+                    case "purchases_warning":
+                        // Si hay warning en compras, lo marcamos como success pero mostramos el mensaje
+                        updateStep("purchases", "success", data.message); // O "error" si prefieres que se vea rojo, pero suele ser no-bloqueante
                         break;
 
                     case "complete":

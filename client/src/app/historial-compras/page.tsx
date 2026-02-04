@@ -51,7 +51,7 @@ const formatDate = (dateStr: string) => {
 };
 
 // API functions
-async function fetchComprasHistorico(params: Record<string, string | number>) {
+async function fetchComprasHistorico(params: Record<string, string | number | undefined>) {
     const searchParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
         if (value !== undefined && value !== "") {
@@ -63,14 +63,16 @@ async function fetchComprasHistorico(params: Record<string, string | number>) {
     return res.json();
 }
 
-async function fetchComprasStats() {
-    const res = await fetch("/api/compras/stats");
+async function fetchComprasStats(origen?: string) {
+    const searchParams = new URLSearchParams();
+    if (origen) searchParams.set("origen", origen);
+    const res = await fetch(`/api/compras/stats?${searchParams}`);
     if (!res.ok) throw new Error("Error al obtener estadísticas");
     return res.json();
 }
 
-async function fetchComprasResumen(params: { fechaInicio: string; fechaFin: string }) {
-    const searchParams = new URLSearchParams(params);
+async function fetchComprasResumen(params: { fechaInicio: string; fechaFin: string; origen?: string }) {
+    const searchParams = new URLSearchParams(params as any);
     const res = await fetch(`/api/compras/resumen?${searchParams}`);
     if (!res.ok) throw new Error("Error al obtener resumen");
     return res.json();
@@ -123,6 +125,7 @@ export default function HistorialComprasPage() {
     const [busqueda, setBusqueda] = useState("");
     const [familia, setFamilia] = useState("");
     const [proveedor, setProveedor] = useState("");
+    const [origen, setOrigen] = useState<"TODOS" | "NACIONAL" | "INTERNACIONAL">("TODOS");
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
     const [sortConfig, setSortConfig] = useState<{ key: string; direction: "asc" | "desc" } | null>({ key: "fecha", direction: "desc" });
@@ -153,28 +156,32 @@ export default function HistorialComprasPage() {
 
     // Stats query
     const { data: stats } = useQuery({
-        queryKey: ["compras-stats"],
-        queryFn: fetchComprasStats,
+        queryKey: ["compras-stats", origen],
+        queryFn: () => fetchComprasStats(origen === "TODOS" ? undefined : origen),
+        placeholderData: keepPreviousData
     });
 
     // Resumen mensual query
     const { data: resumen } = useQuery({
-        queryKey: ["compras-resumen", dateRange],
+        queryKey: ["compras-resumen", dateRange, origen],
         queryFn: () => fetchComprasResumen({
             fechaInicio: dateRange.fechaInicio,
-            fechaFin: dateRange.fechaFin
+            fechaFin: dateRange.fechaFin,
+            origen: origen === "TODOS" ? undefined : origen
         }),
+        placeholderData: keepPreviousData
     });
 
     // Historial query (Server-Side Sorting & Pagination)
     const { data: historial, isLoading, error } = useQuery({
-        queryKey: ["compras-historial", currentPage, pageSize, busqueda, familia, proveedor, dateRange, sortConfig],
+        queryKey: ["compras-historial", currentPage, pageSize, busqueda, familia, proveedor, dateRange, sortConfig, origen],
         queryFn: () => fetchComprasHistorico({
             page: currentPage,
             pageSize,
             sku: busqueda,
             familia,
             proveedor,
+            origen: origen === "TODOS" ? undefined : origen,
             fechaInicio: dateRange.fechaInicio,
             fechaFin: dateRange.fechaFin,
             sortBy: sortConfig?.key || "fecha",
@@ -295,6 +302,29 @@ export default function HistorialComprasPage() {
                                 title="Vista de Gráficos"
                             >
                                 <BarChart3 className="h-4 w-4" />
+                            </button>
+                        </div>
+                        <div className="h-8 w-px bg-slate-200 mx-2"></div>
+
+                        {/* Origin Filter */}
+                        <div className="bg-slate-50 rounded-lg p-1 flex items-center border border-slate-200 gap-1">
+                            <button
+                                onClick={() => setOrigen("TODOS")}
+                                className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${origen === "TODOS" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                            >
+                                Todos
+                            </button>
+                            <button
+                                onClick={() => setOrigen("NACIONAL")}
+                                className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${origen === "NACIONAL" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                            >
+                                Nacional
+                            </button>
+                            <button
+                                onClick={() => setOrigen("INTERNACIONAL")}
+                                className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${origen === "INTERNACIONAL" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                            >
+                                Internac.
                             </button>
                         </div>
                         <div className="h-8 w-px bg-slate-200 mx-2"></div>
@@ -445,6 +475,7 @@ export default function HistorialComprasPage() {
                         <PurchaseCharts
                             startDate={new Date(dateRange.fechaInicio)}
                             endDate={new Date(dateRange.fechaFin)}
+                            origen={origen === "TODOS" ? undefined : origen}
                         />
                     ) : (
                         <>
@@ -475,6 +506,25 @@ export default function HistorialComprasPage() {
                                         placeholder="Proveedor..."
                                         className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 w-40"
                                     />
+                                </div>
+                            </div>
+
+                            {/* Period Summary */}
+                            <div className="bg-green-50 rounded-xl border border-green-200 p-4 mb-4 flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-green-100 rounded-lg">
+                                        <DollarSign className="h-5 w-5 text-green-700" />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm text-green-800 font-medium">Total Período Seleccionado</p>
+                                        <p className="text-xl font-bold text-green-900">
+                                            {formatCLP(historial?.totalAmount || 0)}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-sm text-green-800 font-medium">Compras</p>
+                                    <p className="text-xl font-bold text-green-900">{historial?.total || 0}</p>
                                 </div>
                             </div>
 
@@ -510,7 +560,13 @@ export default function HistorialComprasPage() {
                                                             <SortButton column="fecha" currentSort={currentSort} onSort={handleSort} />
                                                         </div>
                                                     </th>
-                                                    <th className="px-4 py-3 sticky left-28 bg-slate-50 z-10 w-32 border-r border-slate-200 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]">
+                                                    <th className="px-4 py-3 sticky left-28 bg-slate-50 z-10 w-24 text-center border-r border-slate-200 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]">
+                                                        <div className="flex items-center justify-center gap-1 group">
+                                                            Folio
+                                                            <SortButton column="folio" currentSort={currentSort} onSort={handleSort} />
+                                                        </div>
+                                                    </th>
+                                                    <th className="px-4 py-3 sticky left-52 bg-slate-50 z-10 w-32 border-r border-slate-200 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]">
                                                         <div className="flex items-center gap-1 group">
                                                             SKU
                                                             <SortButton column="sku" currentSort={currentSort} onSort={handleSort} />
@@ -562,7 +618,10 @@ export default function HistorialComprasPage() {
                                                             <td className="px-4 py-3 whitespace-nowrap text-slate-600 sticky left-0 bg-white group-hover:bg-slate-50 border-r border-slate-100 font-medium text-center shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]">
                                                                 {formatDate(compra.fecha)}
                                                             </td>
-                                                            <td className="px-4 py-3 font-medium text-slate-900 sticky left-28 bg-white group-hover:bg-slate-50 border-r border-slate-100 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]">
+                                                            <td className="px-4 py-3 whitespace-nowrap text-slate-600 sticky left-28 bg-white group-hover:bg-slate-50 border-r border-slate-100 font-mono text-xs text-center shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]">
+                                                                {compra.folio || '-'}
+                                                            </td>
+                                                            <td className="px-4 py-3 font-medium text-slate-900 sticky left-52 bg-white group-hover:bg-slate-50 border-r border-slate-100 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]">
                                                                 {compra.producto?.sku}
                                                             </td>
                                                             <td className="px-4 py-3 text-slate-600 max-w-[240px] truncate" title={compra.producto?.descripcion}>
@@ -613,7 +672,7 @@ export default function HistorialComprasPage() {
                         </>
                     )}
                 </main>
-            </div>
-        </div>
+            </div >
+        </div >
     );
 }

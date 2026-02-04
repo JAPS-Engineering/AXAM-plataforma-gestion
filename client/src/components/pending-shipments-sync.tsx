@@ -174,7 +174,7 @@ export function PendingShipmentsSync({ onPendientesLoaded }: PendingShipmentsSyn
                         <div className="p-6 space-y-6">
                             <div className="bg-indigo-50 rounded-xl p-4 border border-indigo-100">
                                 <p className="text-sm text-indigo-700 font-medium">
-                                    Este nuevo método ejecuta la extracción directamente en tu navegador, saltando cualquier bloqueo de seguridad de Manager+.
+                                    Este método ejecuta la extracción directamente en tu navegador, permitiendo obtener los pendientes de manera ágil y segura.
                                 </p>
                             </div>
 

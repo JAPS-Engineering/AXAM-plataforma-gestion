@@ -45,6 +45,14 @@ router.get('/historico', async (req, res) => {
             where.proveedor = { contains: proveedor };
         }
 
+        if (req.query.origen) {
+            if (req.query.origen === 'NACIONAL') {
+                where.tipoDoc = 'FACE';
+            } else if (req.query.origen === 'INTERNACIONAL') {
+                where.tipoDoc = { in: ['FIM', 'DIN'] }; // Incluir DIN por compatibilidad con historico antiguo si quedara algo
+            }
+        }
+
         if (fechaInicio || fechaFin) {
             where.fecha = {};
             if (fechaInicio) where.fecha.gte = new Date(fechaInicio);
@@ -90,7 +98,7 @@ router.get('/historico', async (req, res) => {
                 break;
         }
 
-        const [compras, total] = await Promise.all([
+        const [compras, total, allForSum] = await Promise.all([
             prisma.compraHistorica.findMany({
                 where,
                 include: {
@@ -107,12 +115,22 @@ router.get('/historico', async (req, res) => {
                 skip,
                 take
             }),
-            prisma.compraHistorica.count({ where })
+            prisma.compraHistorica.count({ where }),
+            prisma.compraHistorica.findMany({
+                where,
+                select: {
+                    cantidad: true,
+                    precioUnitario: true
+                }
+            })
         ]);
+
+        const totalAmount = allForSum.reduce((acc, curr) => acc + (curr.cantidad * curr.precioUnitario), 0);
 
         res.json({
             compras,
             total,
+            totalAmount,
             page: parseInt(page),
             pageSize: parseInt(pageSize),
             totalPages: Math.ceil(total / parseInt(pageSize))
@@ -129,13 +147,13 @@ router.get('/historico', async (req, res) => {
  * Resumen mensual de compras (totales por mes)
  * Query params: meses (default 12)
  */
+// ... (resumen implementation with filter logic)
 router.get('/resumen', async (req, res) => {
     try {
-        const { fechaInicio, fechaFin } = req.query;
+        const { fechaInicio, fechaFin, origen } = req.query;
         let meses = parseInt(req.query.meses) || 12;
 
         const where = {};
-        let startDate;
 
         if (fechaInicio && fechaFin) {
             where.fecha = {
@@ -143,22 +161,20 @@ router.get('/resumen', async (req, res) => {
                 lte: new Date(fechaFin + 'T23:59:59.999Z')
             };
         } else {
-            // Fallback to "last N months" logic if no specific range provided
-            startDate = new Date();
+            const startDate = new Date();
             startDate.setMonth(startDate.getMonth() - meses);
-            startDate.setDate(1); // Start of that month
-            where.fecha = {
-                gte: startDate
-            };
+            startDate.setDate(1);
+            where.fecha = { gte: startDate };
+        }
+
+        if (origen) {
+            if (origen === 'NACIONAL') where.tipoDoc = 'FACE';
+            else if (origen === 'INTERNACIONAL') where.tipoDoc = { in: ['FIM', 'DIN'] };
         }
 
         const compras = await prisma.compraHistorica.findMany({
             where,
-            select: {
-                fecha: true,
-                cantidad: true,
-                precioUnitario: true
-            },
+            select: { fecha: true, cantidad: true, precioUnitario: true },
             orderBy: { fecha: 'desc' }
         });
 
@@ -185,13 +201,11 @@ router.get('/resumen', async (req, res) => {
             resumen.cantidadTotal += compra.cantidad;
         }
 
-        // Convertir a array
         const resultado = Array.from(resumenPorMes.values())
             .sort((a, b) => {
                 if (a.ano !== b.ano) return b.ano - a.ano;
                 return b.mes - a.mes;
             });
-        // Removed specific slice since we filtered by date in DB
 
         res.json({ resumen: resultado });
 
@@ -434,20 +448,30 @@ router.get('/costos', async (req, res) => {
  * GET /api/compras/stats
  * Estadísticas generales de compras
  */
+// ... (stats implementation)
 router.get('/stats', async (req, res) => {
     try {
+        const { fechaInicio, getOrigen: origen } = req.query; // getOrigen alias to match pattern
+
+        const where = {};
+        if (origen) {
+            if (origen === 'NACIONAL') where.tipoDoc = 'FACE';
+            else if (origen === 'INTERNACIONAL') where.tipoDoc = { in: ['FIM', 'DIN'] };
+        }
+
         const [
             totalCompras,
             productosConCosto,
             totalProductos
         ] = await Promise.all([
-            prisma.compraHistorica.count(),
+            prisma.compraHistorica.count({ where }),
             prisma.producto.count({ where: { precioUltimaCompra: { not: null } } }),
             prisma.producto.count()
         ]);
 
-        // Última compra
+        // Última compra (filtered)
         const ultimaCompra = await prisma.compraHistorica.findFirst({
+            where,
             orderBy: { fecha: 'desc' },
             select: { fecha: true }
         });
@@ -496,6 +520,15 @@ router.get('/graficos', async (req, res) => {
 
         if (familia) whereBase.producto = { familia };
         if (proveedor) whereBase.proveedor = { contains: proveedor };
+
+        const origen = req.query.origen;
+        if (origen) {
+            if (origen === 'NACIONAL') {
+                whereBase.tipoDoc = 'FACE';
+            } else if (origen === 'INTERNACIONAL') {
+                whereBase.tipoDoc = { in: ['FIM', 'DIN'] };
+            }
+        }
 
         // --- 2. Market Share & Ranking (Por Familia) ---
         // Prisma no soporta agrupar por relación directamente de forma fácil en groupByKey
