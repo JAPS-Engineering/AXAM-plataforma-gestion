@@ -197,6 +197,24 @@ export function FiltersBar(props: FiltersBarProps) {
     return (
         <div className={cn("bg-white rounded-xl border border-slate-200 p-4 shadow-sm", className)}>
             <div className="flex flex-wrap items-center gap-4">
+                {/* Busqueda */}
+                <div className="flex flex-col gap-1">
+                    <label htmlFor="busqueda" className="text-xs font-medium text-slate-500">
+                        Búsqueda
+                    </label>
+                    <div className="relative">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                        <input
+                            id="busqueda"
+                            type="text"
+                            value={busqueda}
+                            onChange={(e) => onBusquedaChange(e.target.value)}
+                            placeholder="SKU, descripción..."
+                            className="w-48 pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                    </div>
+                </div>
+
                 {/* Marca */}
                 <div className="flex flex-col gap-1">
                     <label htmlFor="marca" className="text-xs font-medium text-slate-500">

@@ -73,7 +73,13 @@ async function getVentasDashboard(req, res) {
             totalMontoGlobal += totalMonto;
 
             return {
-                producto: { id: producto.id, sku: producto.sku, descripcion: producto.descripcion, familia: producto.familia },
+                producto: {
+                    id: producto.id,
+                    sku: producto.sku,
+                    descripcion: producto.descripcion,
+                    familia: producto.familia,
+                    precioUltimaCompra: producto.precioUltimaCompra
+                },
                 ventasMeses, totalMonto, totalCantidad,
                 promedioMonto: parseFloat((totalMonto / ventasMeses.length).toFixed(0)),
                 promedioCantidad: parseFloat((totalCantidad / ventasMeses.length).toFixed(2)),
@@ -212,7 +218,7 @@ async function getGraficosAvanzados(req, res) {
         // Logic for Comparison Years
         // Default: Current Year vs Previous Year
         const mesActualObj = getMesActual();
-        
+
         let anoActual = mesActualObj.ano;
         let anoAnterior = anoActual - 1;
 

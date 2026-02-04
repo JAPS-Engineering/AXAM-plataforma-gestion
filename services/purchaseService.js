@@ -16,7 +16,7 @@ const ERP_BASE_URL = process.env.ERP_BASE_URL;
  * Obtener Facturas de Compra (FACE) para un rango de fechas
  * Usa details=1 para obtener los productos en una sola llamada
  */
-async function getPurchaseDocuments(fechaInicio, fechaFin, attempt = 1) {
+async function getPurchaseDocuments(fechaInicio, fechaFin, attempt = 1, docType = 'FACE') {
     try {
         const headers = await getAuthHeaders();
 
@@ -24,7 +24,8 @@ async function getPurchaseDocuments(fechaInicio, fechaFin, attempt = 1) {
         const fechaFinStr = format(fechaFin, 'yyyyMMdd');
 
         // FACE = Factura de Compra Electrónica, C = Compra
-        const url = `${ERP_BASE_URL}/documents/${RUT_EMPRESA}/FACE/C?details=1&df=${fechaInicioStr}&dt=${fechaFinStr}`;
+        // DIN = Declaración de Ingreso (Importación)
+        const url = `${ERP_BASE_URL}/documents/${RUT_EMPRESA}/${docType}/C?details=1&df=${fechaInicioStr}&dt=${fechaFinStr}`;
 
         const response = await axios.get(url, {
             headers,
@@ -106,6 +107,15 @@ function extractProductsFromPurchase(document) {
             precioUnitario = parseFloat(item.monto_neto) / cantidad;
         }
 
+        // Conversión de Moneda (CLP)
+        // Algunos documentos (como DIN/Importaciones) vienen en USD u otra moneda
+        const tasaCambio = parseFloat(document.tasa_cambio || 1);
+        const esMonedaExtranjera = document.moneda && document.moneda !== 'CLP' && document.moneda !== '$';
+
+        if (tasaCambio > 1 && (esMonedaExtranjera || document.tipo_doc === 'DIN')) {
+            precioUnitario = precioUnitario * tasaCambio;
+        }
+
         if (sku && cantidad > 0 && precioUnitario > 0) {
             products.push({
                 sku: sku.trim(),
@@ -124,13 +134,20 @@ function extractProductsFromPurchase(document) {
 
 /**
  * Obtener todas las compras de un rango de fechas
+ * Busca tanto FACE (Facturas) como DIN (Importaciones)
  */
 async function getAllPurchases(fechaInicio, fechaFin) {
-    logInfo(`Obteniendo compras (FACE) del ${format(fechaInicio, 'dd/MM/yyyy')} al ${format(fechaFin, 'dd/MM/yyyy')}...`);
+    logInfo(`Obteniendo compras (FACE + DIN) del ${format(fechaInicio, 'dd/MM/yyyy')} al ${format(fechaFin, 'dd/MM/yyyy')}...`);
 
-    const documents = await getPurchaseDocuments(fechaInicio, fechaFin);
+    // Fetch both types in parallel
+    const [faceDocs, dinDocs] = await Promise.all([
+        getPurchaseDocuments(fechaInicio, fechaFin, 1, 'FACE'),
+        getPurchaseDocuments(fechaInicio, fechaFin, 1, 'DIN')
+    ]);
 
-    logSuccess(`  FACE: ${documents.length} documentos`);
+    const documents = [...faceDocs, ...dinDocs];
+
+    logSuccess(`  FACE: ${faceDocs.length}, DIN: ${dinDocs.length} documentos`);
 
     const allProducts = [];
 

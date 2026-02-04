@@ -108,6 +108,9 @@ export default function VentasPage() {
                 } else if (sortConfig.key === "promedio") {
                     aValue = a.promedioMonto;
                     bValue = b.promedioMonto;
+                } else if (sortConfig.key === "costoUltimaCompra") {
+                    aValue = a.producto.precioUltimaCompra || 0;
+                    bValue = b.producto.precioUltimaCompra || 0;
                 } else if (sortConfig.key.startsWith("mes-")) {
                     const index = parseInt(sortConfig.key.split("-")[1]);
                     aValue = a.ventasMeses[index]?.montoNeto || 0;
@@ -368,6 +371,19 @@ export default function VentasPage() {
                                                     )}
                                                 </button>
                                             </th>
+                                            <th className="px-4 py-3 text-right font-medium text-slate-500 whitespace-nowrap min-w-[120px]">
+                                                <button
+                                                    onClick={() => handleSort("costoUltimaCompra")}
+                                                    className="flex items-center justify-end gap-1 w-full hover:text-slate-900 group"
+                                                >
+                                                    Costo U. Compra
+                                                    {sortConfig?.key === "costoUltimaCompra" ? (
+                                                        sortConfig.direction === "asc" ? <ChevronUp className="h-4 w-4 text-indigo-600" /> : <ChevronDown className="h-4 w-4 text-indigo-600" />
+                                                    ) : (
+                                                        <ChevronsUpDown className="h-4 w-4 text-slate-300 group-hover:text-slate-500" />
+                                                    )}
+                                                </button>
+                                            </th>
                                             {data?.meta.columnas.map((col, idx) => (
                                                 <th key={idx} className="px-4 py-3 text-right whitespace-nowrap min-w-[120px]">
                                                     <button
@@ -421,6 +437,9 @@ export default function VentasPage() {
                                                             {row.producto.descripcion}
                                                         </div>
                                                     </div>
+                                                </td>
+                                                <td className="px-4 py-3 text-right font-mono text-slate-600 bg-slate-50/30">
+                                                    {row.producto.precioUltimaCompra ? formatCLP(row.producto.precioUltimaCompra) : '-'}
                                                 </td>
                                                 {row.ventasMeses.map((venta, idx) => (
                                                     <td key={idx} className="px-4 py-3 text-right font-mono text-slate-600">

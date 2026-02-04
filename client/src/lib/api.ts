@@ -118,6 +118,7 @@ export interface ProductoVentasRow {
         sku: string;
         descripcion: string;
         familia: string;
+        precioUltimaCompra?: number | null;
     };
     ventasMeses: VentasMes[];
     totalMonto: number;
