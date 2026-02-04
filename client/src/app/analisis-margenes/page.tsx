@@ -71,7 +71,7 @@ export default function AnalisisMargenesPage() {
     const [busqueda, setBusqueda] = useState("");
     const [familia, setFamilia] = useState("");
     const [proveedor, setProveedor] = useState("");
-    const [vendedor, setVendedor] = useState("");
+    const [costoFilter, setCostoFilter] = useState<"all" | "with_cost" | "without_cost">("all");
 
     // Time period filters
     const [periodMode, setPeriodMode] = useState<"preset" | "custom">("preset");
@@ -103,13 +103,12 @@ export default function AnalisisMargenesPage() {
 
     // Query
     const { data: response, isLoading, error } = useQuery({
-        queryKey: ["margenes", range, familia, proveedor, vendedor],
+        queryKey: ["margenes", range, familia, proveedor],
         queryFn: () => fetchMargenes({
             fechaInicio: range.start,
             fechaFin: range.end,
             familia,
-            proveedor,
-            vendedor
+            proveedor
         }),
         placeholderData: keepPreviousData
     });
@@ -129,6 +128,13 @@ export default function AnalisisMargenesPage() {
             );
         }
 
+        // Cost Filter
+        if (costoFilter === "with_cost") {
+            data = data.filter(p => p.costo && p.costo > 0);
+        } else if (costoFilter === "without_cost") {
+            data = data.filter(p => !p.costo || p.costo === 0);
+        }
+
         // Sorting
         if (sortConfig) {
             data.sort((a, b) => {
@@ -146,7 +152,7 @@ export default function AnalisisMargenesPage() {
         }
 
         return data;
-    }, [response, busqueda, sortConfig]);
+    }, [response, busqueda, sortConfig, costoFilter]);
 
     // Pagination Logic
     const totalItems = processedData.length;
@@ -288,13 +294,16 @@ export default function AnalisisMargenesPage() {
                                 placeholder="Proveedor"
                                 className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 w-40"
                             />
-                            <input
-                                type="text"
-                                value={vendedor}
-                                onChange={(e) => setVendedor(e.target.value)}
-                                placeholder="Vendedor (Ventas)"
-                                className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 w-40"
-                            />
+
+                            <select
+                                value={costoFilter}
+                                onChange={(e) => { setCostoFilter(e.target.value as any); setCurrentPage(1); }}
+                                className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                            >
+                                <option value="all">Todos los Costos</option>
+                                <option value="with_cost">Con Precio Compra</option>
+                                <option value="without_cost">Sin Precio Compra</option>
+                            </select>
                         </div>
                     </div>
 
@@ -324,6 +333,9 @@ export default function AnalisisMargenesPage() {
                                             </th>
                                             <th className="px-4 py-3 max-w-[200px]">
                                                 <div className="flex items-center gap-1">Descripción <SortButton column="descripcion" currentSort={currentSort} onSort={handleSort} /></div>
+                                            </th>
+                                            <th className="px-4 py-3">
+                                                <div className="flex items-center gap-1">Proveedor <SortButton column="proveedor" currentSort={currentSort} onSort={handleSort} /></div>
                                             </th>
                                             <th className="px-4 py-3 text-right text-indigo-700 bg-indigo-50/30">
                                                 <div className="flex justify-end gap-1">Costo Última Compra <SortButton column="costo" currentSort={currentSort} onSort={handleSort} /></div>
@@ -368,6 +380,9 @@ export default function AnalisisMargenesPage() {
                                                 </td>
                                                 <td className="px-4 py-3 text-slate-600 truncate max-w-[200px]" title={p.descripcion}>
                                                     {p.descripcion}
+                                                </td>
+                                                <td className="px-4 py-3 text-slate-600 text-xs truncate max-w-[150px]" title={p.proveedor}>
+                                                    {p.proveedor}
                                                 </td>
                                                 <td className="px-4 py-3 text-right font-mono font-medium text-indigo-700 bg-indigo-50/10">
                                                     {p.costo ? formatCLP(p.costo) : <span className="text-red-300 text-xs">Sin Costo</span>}

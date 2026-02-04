@@ -5,30 +5,30 @@ const { getAuthHeaders } = require('../utils/auth');
 const RUT_EMPRESA = process.env.RUT_EMPRESA;
 const ERP_BASE_URL = process.env.ERP_BASE_URL;
 
-async function debugPriceLists() {
+async function debugProducts() {
     try {
-        console.log('Fetching Price List data...');
+        console.log('Fetching Product data...');
         const headers = await getAuthHeaders();
-        const url = `${ERP_BASE_URL}/pricelist/${RUT_EMPRESA}/?dets=1`;
+        const url = `${ERP_BASE_URL}/products/${RUT_EMPRESA}?con_stock=S&con_listaprecios=S&pic=1`;
         console.log(`URL: ${url}`);
 
         const response = await axios.get(url, { headers });
         const data = response.data.data || response.data || [];
 
-        const list89 = data.find(l => String(l.codigo) === '89' || String(l.id) === '89');
+        if (Array.isArray(data) && data.length > 0) {
+            console.log('Product count:', data.length);
+            console.log('KEYS:', JSON.stringify(Object.keys(data[0]), null, 2));
 
-        if (list89) {
-            console.log('Found List 89. Keys:', Object.keys(list89));
-            // Add 'products' to the list of properties to check
-            const items = list89.products || list89.produtos || list89.productos || list89.detalles || list89.items || [];
-
-            if (items.length > 0) {
-                console.log(JSON.stringify(items.slice(0, 3), null, 2));
-            } else {
-                console.log('List 89 has no items.');
-            }
+            // Check specific potential names
+            const sample = data[0];
+            const potentialFields = ['proveedor', 'provider', 'supplier', 'maker', 'fabricante', 'marca', 'brand'];
+            const found = {};
+            potentialFields.forEach(f => {
+                if (sample[f]) found[f] = sample[f];
+            });
+            console.log('Potential supplier values:', found);
         } else {
-            console.log('List 89 not found.');
+            console.log('No products found or invalid format.');
         }
 
     } catch (error) {
@@ -36,4 +36,4 @@ async function debugPriceLists() {
     }
 }
 
-debugPriceLists();
+debugProducts();

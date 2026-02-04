@@ -74,7 +74,8 @@ function extractProductInfo(product) {
         product.tipo ||
         '';
 
-    const proveedor = product.proveedor ||
+    const proveedor = product.marca ||
+        product.proveedor ||
         product.nombre_proveedor ||
         product.cod_proveedor ||
         '';
