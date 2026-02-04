@@ -162,6 +162,7 @@ async function getPriceListsData() {
                 String(l.codigo) === listId ||
                 String(l.id) === listId ||
                 String(l.cod_lista) === listId ||
+                (l.listName && l.listName.includes(listId)) ||
                 (l.descripcion && l.descripcion.includes(listId))
             );
 
@@ -170,13 +171,13 @@ async function getPriceListsData() {
                 continue;
             }
 
-            const items = targetList.produtos || targetList.productos || targetList.detalles || targetList.items || targetList.products || [];
+            const items = targetList.products || targetList.produtos || targetList.productos || targetList.detalles || targetList.items || [];
 
             logInfo(`  - Lista ${listId}: ${items.length} items encontrados.`);
 
             items.forEach(item => {
-                const sku = (item.codigo || item.sku || item.cod_articulo || item.cod || '').trim();
-                const precio = parseFloat(item.precio || item.valor || item.monto || 0);
+                const sku = (item.cod || item.codigo || item.sku || item.cod_articulo || '').trim();
+                const precio = parseFloat(item.price || item.precio || item.valor || item.monto || 0);
 
                 if (sku) {
                     if (!skuData.has(sku)) {
