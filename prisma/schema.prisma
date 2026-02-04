@@ -36,11 +36,27 @@ model Producto {
   precioUltimaCompra Float?   @map("precio_ultima_compra")
   fechaUltimaCompra  DateTime? @map("fecha_ultima_compra")
 
+  preciosListas      PrecioLista[]
+
   @@index([sku])
   @@index([familia])
   @@index([proveedor])
   @@index([origen])
   @@map("productos")
+}
+
+model PrecioLista {
+  id              Int      @id @default(autoincrement())
+  productoId      Int      @map("producto_id")
+  listaId         Int      @map("lista_id")     // 89, 652, 386, etc.
+  precioNeto      Float    @map("precio_neto")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  producto Producto @relation(fields: [productoId], references: [id], onDelete: Cascade)
+
+  @@unique([productoId, listaId])
+  @@map("precios_listas")
 }
 
 model VentaHistorica {

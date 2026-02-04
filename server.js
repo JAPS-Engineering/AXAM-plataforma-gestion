@@ -42,6 +42,7 @@ const syncRoutes = require('./routes/sync');
 const vendedoresRoutes = require('./routes/vendedores');
 const notificationsRoutes = require('./routes/notifications');
 const comprasHistorialRoutes = require('./routes/comprasHistorial');
+const margenesRoutes = require('./routes/margenes.routes');
 const { ejecutarAlertaStockBajo } = require('./scripts/alertaStockBajo');
 const { syncYesterday: syncComprasYesterday } = require('./scripts/syncCompras');
 
@@ -56,6 +57,7 @@ app.use('/api/sync', syncRoutes);
 app.use('/api/vendedores', vendedoresRoutes);
 app.use('/api/compras', comprasHistorialRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/margenes', margenesRoutes);
 
 // Ruta de salud
 app.get('/health', (req, res) => {

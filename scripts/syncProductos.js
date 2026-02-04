@@ -2,7 +2,7 @@
  * Script para sincronizar productos desde Manager+ a la base de datos
  * 
  * Obtiene todos los productos de Manager+ y los guarda en la base de datos
- * con su SKU y descripción
+ * Filtrando por listas de precios (89, 652, 386) y guardando sus precios.
  */
 
 require('dotenv').config();
@@ -13,6 +13,9 @@ const { logSection, logSuccess, logError, logWarning, logInfo, logProgress } = r
 
 const RUT_EMPRESA = process.env.RUT_EMPRESA;
 const ERP_BASE_URL = process.env.ERP_BASE_URL;
+
+// Listas de precios a considerar
+const TARGET_LISTS = ['89', '652', '386'];
 
 /**
  * Obtener todos los productos de Manager+
@@ -85,34 +88,53 @@ function extractProductInfo(product) {
 }
 
 /**
- * Guardar o actualizar producto en la base de datos
+ * Guardar o actualizar producto en la base de datos y sus precios
  */
-function saveProduct(db, sku, descripcion, familia = '', proveedor = '') {
+function saveProductWithPrices(db, sku, descripcion, familia, proveedor, prices) {
     if (!sku || !descripcion) {
         return false;
     }
 
     try {
-        // Intentar actualizar primero
-        const update = db.prepare(`
-            UPDATE productos 
-            SET descripcion = ?, familia = ?, proveedor = ?, updated_at = CURRENT_TIMESTAMP 
-            WHERE sku = ?
-        `);
-
-        const result = update.run(descripcion, familia, proveedor, sku);
-
-        // Si no se actualizó nada, insertar
-        if (result.changes === 0) {
-            const insert = db.prepare(`
-                INSERT INTO productos (sku, descripcion, familia, proveedor, updated_at) 
-                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        const transaction = db.transaction(() => {
+            // 1. Guardar/Actualizar Producto
+            const update = db.prepare(`
+                UPDATE productos 
+                SET descripcion = ?, familia = ?, proveedor = ?, updated_at = CURRENT_TIMESTAMP 
+                WHERE sku = ?
             `);
-            insert.run(sku, descripcion, familia, proveedor);
-            return true; // Nuevo producto
-        }
+            let result = update.run(descripcion, familia, proveedor, sku);
 
-        return false; // Producto actualizado
+            let productId;
+            if (result.changes === 0) {
+                const insert = db.prepare(`
+                    INSERT INTO productos (sku, descripcion, familia, proveedor, updated_at) 
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                `);
+                const info = insert.run(sku, descripcion, familia, proveedor);
+                productId = info.lastInsertRowid;
+            } else {
+                const row = db.prepare('SELECT id FROM productos WHERE sku = ?').get(sku);
+                productId = row.id;
+            }
+
+            // 2. Guardar Precios
+            const insertPrice = db.prepare(`
+                INSERT INTO precios_listas (producto_id, lista_id, precio_neto, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(producto_id, lista_id) DO UPDATE SET
+                precio_neto = excluded.precio_neto,
+                updated_at = CURRENT_TIMESTAMP
+            `);
+
+            for (const [listId, price] of Object.entries(prices)) {
+                insertPrice.run(productId, parseInt(listId), price);
+            }
+
+            return result.changes === 0; // True si es nuevo
+        });
+
+        return transaction();
     } catch (error) {
         logError(`Error al guardar producto ${sku}: ${error.message}`);
         return false;
@@ -120,46 +142,56 @@ function saveProduct(db, sku, descripcion, familia = '', proveedor = '') {
 }
 
 /**
- * Función principal
+ * Función para obtener las Listas definidas y extraer SKUs y Precios
  */
-/**
- * Función para obtener la Lista Mayorista (ID 652) y extraer SKUs permitidos
- */
-async function getWhiteListSKUs() {
+async function getPriceListsData() {
     try {
-        logInfo('Obteniendo Lista Mayorista (ID 89) para filtrar productos...');
+        logInfo(`Obteniendo Listas de Precios (${TARGET_LISTS.join(', ')})...`);
         const headers = await getAuthHeaders();
-        // Nota: Usamos dets=1 para obtener productos
+        // Usamos dets=1 para obtener productos
         const url = `${ERP_BASE_URL}/pricelist/${RUT_EMPRESA}/?dets=1`;
 
         const response = await axios.get(url, { headers });
         const data = response.data.data || response.data || [];
 
-        // Buscar lista 89 (o la que coincida)
-        const targetList = data.find(l =>
-            String(l.codigo) === '89' ||
-            String(l.id) === '89' ||
-            String(l.cod_lista) === '89' ||
-            (l.descripcion && l.descripcion.includes('89'))
-        );
+        const skuData = new Map(); // SKU -> { prices: { listId: price } }
 
-        if (!targetList) {
-            throw new Error('No se encontró la Lista de Precios 89');
+        for (const listId of TARGET_LISTS) {
+            // Buscar la lista exacta
+            const targetList = data.find(l =>
+                String(l.codigo) === listId ||
+                String(l.id) === listId ||
+                String(l.cod_lista) === listId ||
+                (l.descripcion && l.descripcion.includes(listId))
+            );
+
+            if (!targetList) {
+                logWarning(`⚠️  No se encontró la Lista de Precios ${listId}`);
+                continue;
+            }
+
+            const items = targetList.produtos || targetList.productos || targetList.detalles || targetList.items || targetList.products || [];
+
+            logInfo(`  - Lista ${listId}: ${items.length} items encontrados.`);
+
+            items.forEach(item => {
+                const sku = (item.codigo || item.sku || item.cod_articulo || item.cod || '').trim();
+                const precio = parseFloat(item.precio || item.valor || item.monto || 0);
+
+                if (sku) {
+                    if (!skuData.has(sku)) {
+                        skuData.set(sku, { prices: {} });
+                    }
+                    skuData.get(sku).prices[listId] = precio;
+                }
+            });
         }
 
-        const items = targetList.produtos || targetList.productos || targetList.detalles || targetList.items || targetList.products || [];
-        const skus = new Set();
-
-        items.forEach(item => {
-            const sku = item.codigo || item.sku || item.cod_articulo || item.cod;
-            if (sku) skus.add(sku.trim());
-        });
-
-        logSuccess(`✅ Lista Mayorista obtenida: ${skus.size} SKUs permitidos.`);
-        return skus;
+        logSuccess(`✅ Listas procesadas. ${skuData.size} SKUs únicos encontrados con precio.`);
+        return skuData;
 
     } catch (error) {
-        logError(`Error obteniendo White List: ${error.message}`);
+        logError(`Error obteniendo Listas de Precios: ${error.message}`);
         throw error;
     }
 }
@@ -168,13 +200,18 @@ async function getWhiteListSKUs() {
  * Función principal
  */
 async function main() {
-    logSection('SINCRONIZACIÓN DE PRODUCTOS (FILTRADO POR LISTA 89)');
+    logSection('SINCRONIZACIÓN DE PRODUCTOS Y PRECIOS');
 
     const db = getDatabase();
 
     try {
-        // 1. Obtener White List
-        const whiteList = await getWhiteListSKUs();
+        // 1. Obtener Datos de Listas de Precios (Whitelist + Precios)
+        const whiteListMap = await getPriceListsData();
+
+        if (whiteListMap.size === 0) {
+            logError('No se obtuvieron SKUs de las listas de precios. Abortando para evitar borrado masivo.');
+            return;
+        }
 
         // 2. Obtener TODA la base de productos de Manager+
         // (Necesario para obtener Familia, Proveedor, etc., que no vienen en la lista de precios)
@@ -195,6 +232,9 @@ async function main() {
         let filtrados = 0;
         const familiasFound = new Map();
 
+        // Crear Set de SKUs para búsqueda rápida
+        const whiteListSKUs = new Set(whiteListMap.keys());
+
         for (let i = 0; i < allProducts.length; i++) {
             const product = allProducts[i];
             const { sku, descripcion, familia, proveedor } = extractProductInfo(product);
@@ -209,13 +249,16 @@ async function main() {
                 familiasFound.set(familia, (familiasFound.get(familia) || 0) + 1);
             }
 
-            // CHECK WHITE LIST
-            if (!whiteList.has(sku)) {
+            // CHECK WHITE LIST (Estar en AL MENOS UNA DE LAS LISTAS)
+            if (!whiteListSKUs.has(sku)) {
                 filtrados++;
                 continue;
             }
 
-            const esNuevo = saveProduct(db, sku, descripcion, familia, proveedor);
+            // Obtener precios capturados previamente
+            const prices = whiteListMap.get(sku).prices;
+
+            const esNuevo = saveProductWithPrices(db, sku, descripcion, familia, proveedor, prices);
             if (esNuevo) {
                 nuevos++;
             } else {
@@ -227,21 +270,11 @@ async function main() {
 
         console.log('\n');
         logSection('RESUMEN');
-        logInfo(`Familias encontradas en ERP: ${familiasFound.size}`);
-        if (familiasFound.size > 0) {
-            logInfo('Top 5 familias por cantidad de productos:');
-            Array.from(familiasFound.entries())
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 5)
-                .forEach(([f, count]) => logInfo(`  - ${f}: ${count} productos`));
-        }
 
-        logSuccess(`Total en White List (Lista 89): ${whiteList.size}`);
-        logInfo(`Total en ERP: ${allProducts.length}`);
-        logInfo(`Procesados (Coincidencia): ${nuevos + actualizados}`);
+        logSuccess(`Total productos procesados (en listas): ${nuevos + actualizados}`);
         logInfo(`  - Nuevos: ${nuevos}`);
         logInfo(`  - Actualizados: ${actualizados}`);
-        logInfo(`  - Filtrados (Fuera de lista): ${filtrados}`);
+        logInfo(`  - Filtrados (No están en niguna lista): ${filtrados}`);
 
         // Mostrar estadísticas de la BD
         const totalBD = db.prepare('SELECT COUNT(*) as count FROM productos').get();
@@ -249,7 +282,7 @@ async function main() {
 
         logSuccess('\n✅ Sincronización completada con Éxito\n');
 
-        // 4. LIMPIEZA DE PRODUCTOS ANTIGUOS (NO EN LISTA 89)
+        // 4. LIMPIEZA DE PRODUCTOS ANTIGUOS
         logSection('LIMPIEZA DE BASE DE DATOS');
         logInfo('Verificando productos obsoletos en la base de datos...');
 
@@ -261,13 +294,13 @@ async function main() {
 
         const skusToDelete = [];
         for (const sku of dbSkus) {
-            if (!whiteList.has(sku)) {
+            if (!whiteListSKUs.has(sku)) {
                 skusToDelete.push(sku);
             }
         }
 
         if (skusToDelete.length > 0) {
-            logWarning(`⚠️  Se encontraron ${skusToDelete.length} productos en la BD que NO están en la Lista 89.`);
+            logWarning(`⚠️  Se encontraron ${skusToDelete.length} productos en la BD que NO están en las listas permitidas.`);
             logWarning('⏳ Eliminando productos obsoletos y su historial (Cascade)...');
 
             const deleteStmt = db.prepare('DELETE FROM productos WHERE sku = ?');
@@ -287,12 +320,14 @@ async function main() {
             const totalDeleted = deleteTransaction(skusToDelete);
             logSuccess(`🗑️  Eliminados ${totalDeleted} productos obsoletos correctamente.`);
         } else {
-            logSuccess('✨ La base de datos está limpia. Todos los productos pertenecen a la Lista 89.');
+            logSuccess('✨ La base de datos está limpia. Todos los productos pertenecen a las listas permitidas.');
         }
 
         // Mostrar estadísticas finales
         const finalCount = db.prepare('SELECT COUNT(*) as count FROM productos').get();
+        const finalPrices = db.prepare('SELECT COUNT(*) as count FROM precios_listas').get();
         logInfo(`Total productos finales en DB: ${finalCount.count}`);
+        logInfo(`Total precios registrados: ${finalPrices.count}`);
 
     } catch (error) {
         logError(`Error en la sincronización: ${error.message}`);
