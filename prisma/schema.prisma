@@ -26,6 +26,7 @@ model Producto {
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   ventasHistoricas   VentaHistorica[]
+  ventasSemanales    VentaSemanal[] // Nueva relación
   ventasActuales     VentaActual[]
   comprasHistoricas  CompraHistorica[]
   stockHistorico     StockHistorico[]
@@ -80,6 +81,26 @@ model VentaHistorica {
   @@map("ventas_mensuales")
 }
 
+model VentaSemanal {
+  id              Int      @id @default(autoincrement())
+  productoId      Int      @map("producto_id")
+  ano             Int
+  semana          Int      // 1-53
+  vendedor        String   @default("")
+  cantidadVendida Float    @default(0) @map("cantidad_vendida")
+  montoNeto       Float    @default(0) @map("monto_neto")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  producto Producto @relation(fields: [productoId], references: [id], onDelete: Cascade)
+  // No relation to Vendedor strictly needed for calculation, but could be added if needed. keeping simple.
+
+  @@unique([productoId, ano, semana, vendedor])
+  @@index([productoId])
+  @@index([ano, semana])
+  @@map("ventas_semanales")
+}
+
 model VentaActual {
   id              Int      @id @default(autoincrement())
   productoId      Int      @map("producto_id")
@@ -104,6 +125,7 @@ model Pedido {
   ano        Int
   mes        Int      // 1-12
   cantidad   Float    @default(0)
+  tipo       String   @default("OC") // 'OC' | 'OCI'
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 

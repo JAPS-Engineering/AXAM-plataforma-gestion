@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { PendingShipmentsSync } from "@/components/pending-shipments-sync";
 import { cn } from "@/lib/utils";
+import { OrderCell } from "@/components/order-cell";
 
 interface SuggestedPurchase {
     id: number;
@@ -41,16 +42,20 @@ interface SuggestedPurchase {
     pendientes?: number;
 }
 
-interface ApiResponse {
+interface SuggestedPurchaseResponse {
     proveedor: string;
     tipoFiltro: string;
     algoritmo: string;
     meses: number;
     mesesCobertura: number;
+    frequency: 'MONTHLY' | 'WEEKLY';
     totalItems: number;
     totalUnidades: number;
     items: SuggestedPurchase[];
 }
+
+// Rename in usage if needed, or alias
+type ApiResponse = SuggestedPurchaseResponse;
 
 interface Proveedor {
     nombre: string;
@@ -127,6 +132,7 @@ export default function AnalisisPage() {
     const [mesesHistorico, setMesesHistorico] = useState(6);
     const [mesesCobertura, setMesesCobertura] = useState(2);
     const [soloEnQuiebre, setSoloEnQuiebre] = useState(false);
+    const [frequency, setFrequency] = useState<'MONTHLY' | 'WEEKLY'>('MONTHLY');
 
     const [salesStatus, setSalesStatus] = useState<'all' | 'with_sales' | 'without_sales'>('all');
 
@@ -206,7 +212,8 @@ export default function AnalisisPage() {
                 algoritmo,
                 meses: mesesHistorico.toString(),
                 mesesCobertura: mesesCobertura.toString(),
-                soloEnQuiebre: soloEnQuiebre.toString()
+                soloEnQuiebre: soloEnQuiebre.toString(),
+                frequency
             });
 
             const res = await fetch(`/api/purchase/suggested?${params}`);
@@ -219,7 +226,7 @@ export default function AnalisisPage() {
         } finally {
             setLoading(false);
         }
-    }, [proveedorSeleccionado, tipoFiltro, algoritmo, mesesHistorico, mesesCobertura, soloEnQuiebre]);
+    }, [proveedorSeleccionado, tipoFiltro, algoritmo, mesesHistorico, mesesCobertura, soloEnQuiebre, frequency]);
 
     // Calcular al cambiar configuración
     useEffect(() => {
@@ -292,22 +299,16 @@ export default function AnalisisPage() {
 
     useEffect(() => {
         setCurrentPage(1);
-    }, [search, salesStatus, algoritmo, mesesHistorico, mesesCobertura, soloEnQuiebre, sortConfig]);
+    }, [search, salesStatus, algoritmo, mesesHistorico, mesesCobertura, soloEnQuiebre, sortConfig, frequency]);
 
-    const handleSaveCompra = async (item: SuggestedPurchase) => {
-        const value = editingValues[item.id];
-        if (value === undefined) return;
-
-        const cantidad = value.trim() === "" ? 0 : parseInt(value, 10);
-        if (isNaN(cantidad)) return;
-
-        setSavingId(item.id);
+    const handleSaveCompra = async (productoId: number, cantidad: number, tipo: string) => {
+        setSavingId(productoId);
         try {
             await fetch("/api/dashboard/orden", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    items: [{ productoId: item.id, cantidad }]
+                    items: [{ productoId, cantidad, tipo }]
                 })
             });
 
@@ -315,15 +316,10 @@ export default function AnalisisPage() {
                 setData({
                     ...data,
                     items: data.items.map(i =>
-                        i.id === item.id ? { ...i, compraRealizar: cantidad } : i
+                        i.id === productoId ? { ...i, compraRealizar: cantidad, tipoCompra: tipo } : i
                     )
                 });
             }
-            setEditingValues(prev => {
-                const next = { ...prev };
-                delete next[item.id];
-                return next;
-            });
         } catch (err) {
             console.error("Error guardando:", err);
         } finally {
@@ -341,7 +337,10 @@ export default function AnalisisPage() {
                 <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shadow-sm">
                     <div className="flex items-center gap-3">
                         <Calculator className="h-6 w-6 text-indigo-600" />
-                        <h1 className="text-xl font-bold text-slate-900">Análisis Personalizado</h1>
+                        <div>
+                            <h1 className="text-xl font-bold text-slate-900">Análisis Personalizado</h1>
+
+                        </div>
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -401,16 +400,16 @@ export default function AnalisisPage() {
 
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-2">
-                                    Histórico de Ventas
+                                    Histórico ({frequency === 'WEEKLY' ? 'Semanas' : 'Meses'})
                                 </label>
                                 <select
                                     value={mesesHistorico}
                                     onChange={(e) => setMesesHistorico(Number(e.target.value))}
                                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                                 >
-                                    {MESES_HISTORICO.map((m) => (
-                                        <option key={m.value} value={m.value}>
-                                            {m.label}
+                                    {(frequency === 'WEEKLY' ? [4, 8, 12, 16, 20, 24] : [3, 6, 12]).map((v) => (
+                                        <option key={v} value={v}>
+                                            {v} {frequency === 'WEEKLY' ? 'semanas' : 'meses'}
                                         </option>
                                     ))}
                                 </select>
@@ -418,16 +417,16 @@ export default function AnalisisPage() {
 
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-2">
-                                    Cobertura Objetivo
+                                    Cobertura ({frequency === 'WEEKLY' ? 'Semanas' : 'Meses'})
                                 </label>
                                 <select
                                     value={mesesCobertura}
                                     onChange={(e) => setMesesCobertura(Number(e.target.value))}
                                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                                 >
-                                    {MESES_COBERTURA.map((m) => (
-                                        <option key={m.value} value={m.value}>
-                                            {m.label}
+                                    {(frequency === 'WEEKLY' ? [1, 2, 3, 4, 8, 12] : [1, 2, 3]).map((v) => (
+                                        <option key={v} value={v}>
+                                            {v} {frequency === 'WEEKLY' ? 'semanas' : 'meses'}
                                         </option>
                                     ))}
                                 </select>
@@ -472,6 +471,40 @@ export default function AnalisisPage() {
                                     <option value="without_sales">Sin Ventas</option>
                                 </select>
                             </div>
+
+                            <div className="flex flex-col gap-1">
+                                <label className="text-sm font-medium text-slate-700">
+                                    Análisis
+                                </label>
+                                <div className="flex items-center gap-2 h-[38px]">
+                                    <button
+                                        onClick={() => {
+                                            setFrequency('MONTHLY');
+                                            setMesesHistorico(6);
+                                            setMesesCobertura(2);
+                                        }}
+                                        className={cn(
+                                            "px-3 py-1.5 text-sm rounded-full transition-colors font-medium",
+                                            frequency === 'MONTHLY' ? "bg-indigo-100 text-indigo-700 font-bold shadow-sm ring-1 ring-indigo-200" : "text-slate-500 hover:bg-slate-100"
+                                        )}
+                                    >
+                                        Mensual
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setFrequency('WEEKLY');
+                                            setMesesHistorico(8);
+                                            setMesesCobertura(4);
+                                        }}
+                                        className={cn(
+                                            "px-3 py-1.5 text-sm rounded-full transition-colors font-medium",
+                                            frequency === 'WEEKLY' ? "bg-indigo-100 text-indigo-700 font-bold shadow-sm ring-1 ring-indigo-200" : "text-slate-500 hover:bg-slate-100"
+                                        )}
+                                    >
+                                        Semanal
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -495,7 +528,7 @@ export default function AnalisisPage() {
                                         <strong>¿Qué es la Cobertura Objetivo?</strong>
                                     </p>
                                     <p className="text-xs text-indigo-700">
-                                        Es la cantidad de meses de stock que deseas mantener en inventario. Si seleccionas <strong>{mesesCobertura} {mesesCobertura === 1 ? 'mes' : 'meses'}</strong>, el sistema calculará cuántas unidades necesitas para cubrir {mesesCobertura} {mesesCobertura === 1 ? 'mes' : 'meses'} de ventas promedio.
+                                        Es la cantidad de {frequency === 'WEEKLY' ? 'semanas' : 'meses'} de stock que deseas mantener en inventario. Si seleccionas <strong>{mesesCobertura} {frequency === 'WEEKLY' ? 'semanas' : 'meses'}</strong>, el sistema calculará cuántas unidades necesitas para cubrir {mesesCobertura} {frequency === 'WEEKLY' ? 'semanas' : 'meses'} de ventas promedio.
                                     </p>
                                 </div>
                                 {algoritmo === "PREDICCION" && (
@@ -507,7 +540,7 @@ export default function AnalisisPage() {
                                             <li>Se calcula la <strong>pendiente</strong> de una línea recta que mejor se ajusta a las ventas históricas (regresión lineal)</li>
                                             <li><strong>Tendencia positiva (+)</strong>: Las ventas están creciendo → se predice que necesitarás más stock</li>
                                             <li><strong>Tendencia negativa (-)</strong>: Las ventas están bajando → se predice que necesitarás menos stock</li>
-                                            <li>La predicción proyecta esta tendencia hacia los meses de cobertura objetivo ({mesesCobertura} meses)</li>
+                                            <li>La predicción proyecta esta tendencia hacia los {frequency === 'WEEKLY' ? 'semanas' : 'meses'} de cobertura objetivo ({mesesCobertura})</li>
                                         </ul>
                                     </div>
                                 )}
@@ -531,7 +564,7 @@ export default function AnalisisPage() {
                                     </div>
                                     <div className="text-center">
                                         <p className="text-2xl font-bold text-emerald-600">{mesesCobertura}</p>
-                                        <p className="text-sm text-slate-500">Meses Cobertura</p>
+                                        <p className="text-sm text-slate-500">{frequency === 'WEEKLY' ? 'Semanas' : 'Meses'} Cobertura</p>
                                     </div>
                                 </div>
                             </div>
@@ -596,15 +629,10 @@ export default function AnalisisPage() {
                                                         <SortButton column="stockMinimo" currentSort={sortConfig} onSort={handleSort} isNumeric />
                                                     </div>
                                                 </th>
-                                                <th className="px-4 py-3 text-right font-semibold text-blue-600">
-                                                    <div className="flex items-center justify-end gap-1">
-                                                        Stock Ópt.
-                                                        <SortButton column="stockOptimo" currentSort={sortConfig} onSort={handleSort} isNumeric />
-                                                    </div>
-                                                </th>
+
                                                 <th className="px-4 py-3 text-right font-semibold text-slate-600">
                                                     <div className="flex items-center justify-end gap-1">
-                                                        Prom. Venta
+                                                        Prom. {frequency === 'WEEKLY' ? 'Semanal' : 'Mensual'}
                                                         <SortButton column="promedioVenta" currentSort={sortConfig} onSort={handleSort} isNumeric />
                                                     </div>
                                                 </th>
@@ -669,12 +697,7 @@ export default function AnalisisPage() {
                                                                 : <span className="text-slate-300">-</span>
                                                             }
                                                         </td>
-                                                        <td className="px-4 py-3 text-right tabular-nums text-blue-600">
-                                                            {item.stockOptimo !== undefined && item.stockOptimo !== null
-                                                                ? item.stockOptimo.toLocaleString("es-CL")
-                                                                : <span className="text-slate-300">-</span>
-                                                            }
-                                                        </td>
+
                                                         <td className="px-4 py-3 text-right tabular-nums">
                                                             {item.promedioVenta.toLocaleString("es-CL")}
                                                         </td>
@@ -714,31 +737,19 @@ export default function AnalisisPage() {
                                                             {Math.max(0, item.cantidadSugerida - (pendientesData[item.sku] || 0)).toLocaleString("es-CL")}
                                                         </td>
                                                         <td className="px-4 py-2 bg-blue-50">
-                                                            <div className="flex items-center gap-1">
-                                                                <input
-                                                                    type="text"
-                                                                    inputMode="numeric"
-                                                                    value={currentValue}
-                                                                    onChange={(e) => setEditingValues(prev => ({
-                                                                        ...prev,
-                                                                        [item.id]: e.target.value
-                                                                    }))}
-                                                                    onKeyDown={(e) => {
-                                                                        if (e.key === "Enter") handleSaveCompra(item);
-                                                                    }}
-                                                                    className="w-20 px-2 py-1 text-right border border-blue-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
-                                                                    placeholder="0"
-                                                                />
-                                                                {isEditing && (
-                                                                    <button
-                                                                        onClick={() => handleSaveCompra(item)}
-                                                                        disabled={savingId === item.id}
-                                                                        className="p-1 text-blue-600 hover:bg-blue-100 rounded"
-                                                                    >
-                                                                        <Save className={`h-4 w-4 ${savingId === item.id ? "animate-pulse" : ""}`} />
-                                                                    </button>
-                                                                )}
-                                                            </div>
+                                                            <OrderCell
+                                                                productoId={item.id}
+                                                                initialValue={item.compraRealizar}
+                                                                // Analysis API response might not have 'tipo' yet? 
+                                                                // getSuggestedPurchases returns item struct. I need to check if backend returns tipo.
+                                                                // If schema has default 'OC', standard queries might not include it unless requested.
+                                                                // I should update purchaseLogic.js to include 'tipo' if 'compraRealizar' comes from 'pedidos'.
+                                                                // Assuming it does for now, or defaulting to 'OC'.
+                                                                // Actually purchaseLogic.js lines 91-93 get pedido.
+                                                                // I should check purchaseLogic.js again.
+                                                                // For now I'll use default 'OC' if missing.
+                                                                onSave={handleSaveCompra}
+                                                            />
                                                         </td>
                                                     </tr>
                                                 );

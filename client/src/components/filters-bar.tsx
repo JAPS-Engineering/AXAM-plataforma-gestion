@@ -172,6 +172,8 @@ interface FiltersBarProps {
     onSalesStatusChange: (value: 'all' | 'with_sales' | 'without_sales') => void;
     soloBajoMinimo?: boolean;
     onSoloBajoMinimoChange?: (value: boolean) => void;
+    frequency?: 'MONTHLY' | 'WEEKLY';
+    onFrequencyChange?: (value: 'MONTHLY' | 'WEEKLY') => void;
 }
 
 export function FiltersBar(props: FiltersBarProps) {
@@ -234,7 +236,7 @@ export function FiltersBar(props: FiltersBarProps) {
                 {!props.hidePeriodSelector && (
                     <div className="flex flex-col gap-1">
                         <label htmlFor="meses" className="text-xs font-medium text-slate-500">
-                            Período
+                            Período ({props.frequency === 'WEEKLY' ? 'Semanas' : 'Meses'})
                         </label>
                         <select
                             id="meses"
@@ -242,9 +244,19 @@ export function FiltersBar(props: FiltersBarProps) {
                             onChange={(e) => onMesesChange(Number(e.target.value))}
                             className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                         >
-                            <option value={3}>3 meses</option>
-                            <option value={6}>6 meses</option>
-                            <option value={12}>12 meses</option>
+                            {props.frequency === 'WEEKLY' ? (
+                                <>
+                                    {[1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24].map(num => (
+                                        <option key={num} value={num}>{num} semanas</option>
+                                    ))}
+                                </>
+                            ) : (
+                                <>
+                                    <option value={3}>3 meses</option>
+                                    <option value={6}>6 meses</option>
+                                    <option value={12}>12 meses</option>
+                                </>
+                            )}
                         </select>
                     </div>
                 )}
@@ -307,6 +319,35 @@ export function FiltersBar(props: FiltersBarProps) {
                 )}
 
 
+
+                {/* Frequency Toggle */}
+                {props.onFrequencyChange && (
+                    <div className="flex flex-col gap-1">
+                        <label className="text-xs font-medium text-slate-500">
+                            Análisis
+                        </label>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => props.onFrequencyChange?.('MONTHLY')}
+                                className={cn(
+                                    "px-3 py-1 text-sm rounded-full transition-colors font-medium",
+                                    props.frequency === 'MONTHLY' ? "bg-indigo-100 text-indigo-700 font-bold shadow-sm ring-1 ring-indigo-200" : "text-slate-500 hover:bg-slate-100"
+                                )}
+                            >
+                                Mensual
+                            </button>
+                            <button
+                                onClick={() => props.onFrequencyChange?.('WEEKLY')}
+                                className={cn(
+                                    "px-3 py-1 text-sm rounded-full transition-colors font-medium",
+                                    props.frequency === 'WEEKLY' ? "bg-indigo-100 text-indigo-700 font-bold shadow-sm ring-1 ring-indigo-200" : "text-slate-500 hover:bg-slate-100"
+                                )}
+                            >
+                                Semanal
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {/* Contador */}
                 <div className="flex items-center gap-2 ml-auto pt-5">

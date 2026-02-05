@@ -284,6 +284,62 @@ async function getMonthlySales(year, month) {
 }
 
 /**
+ * Obtener ventas de una semana específica (ISO Week)
+ * @param {number} year - Año
+ * @param {number} week - Semana ISO (1-53)
+ */
+async function getWeeklySales(year, week) {
+    const { startOfWeek, endOfWeek, parseISO } = require('date-fns');
+
+    // Calcular fechas inicio y fin de la semana
+    // Simple approach: get date from year and week
+    // Note: ISO weeks start on Monday
+    const simpleDate = new Date(year, 0, 1 + (week - 1) * 7);
+    const dayOfWeek = simpleDate.getDay();
+    const ISOweekStart = simpleDate;
+    if (dayOfWeek <= 4)
+        ISOweekStart.setDate(simpleDate.getDate() - simpleDate.getDay() + 1);
+    else
+        ISOweekStart.setDate(simpleDate.getDate() + 8 - simpleDate.getDay());
+
+    // date-fns helper might be easier if available, but let's stick to basics or use library correctly if imported
+    // actually we imported date-fns at top of file but not startOfWeek/endOfWeek in top scope
+    // Let's rely on a helper to get dates from ISO week
+
+    const getDateOfISOWeek = (w, y) => {
+        const simple = new Date(y, 0, 1 + (w - 1) * 7);
+        const dow = simple.getDay();
+        const ISOweekStart = simple;
+        if (dow <= 4)
+            ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
+        else
+            ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
+        return ISOweekStart;
+    }
+
+    const startDate = getDateOfISOWeek(week, year);
+    startDate.setHours(0, 0, 0, 0); // Lunes 00:00
+
+    const endDate = new Date(startDate);
+    endDate.setDate(startDate.getDate() + 6);
+    endDate.setHours(23, 59, 59, 999); // Domingo 23:59:59
+
+    logInfo(`Obteniendo ventas de la Semana ${week}/${year} (${format(startDate, 'dd/MM/yyyy')} - ${format(endDate, 'dd/MM/yyyy')})...`);
+
+    const documents = await getAllSales(startDate, endDate);
+    const salesByProduct = aggregateSalesByProduct(documents);
+
+    return {
+        year,
+        week,
+        startDate,
+        endDate,
+        documentsCount: documents.length,
+        sales: salesByProduct
+    };
+}
+
+/**
  * Obtener stock actual de todos los productos
  */
 async function getCurrentStock() {
@@ -404,5 +460,6 @@ module.exports = {
     getMonthlySales,
     getCurrentStock,
     getAllProducts,
-    getWhiteListSKUs
+    getWhiteListSKUs,
+    getWeeklySales
 };

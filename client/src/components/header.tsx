@@ -12,6 +12,7 @@ interface HeaderProps {
     isResetting?: boolean;
     onSyncProducts?: () => void;
     isSyncing?: boolean;
+    children?: React.ReactNode;
 }
 
 export function Header({
@@ -22,7 +23,8 @@ export function Header({
     onReset,
     isResetting,
     onSyncProducts,
-    isSyncing
+    isSyncing,
+    children
 }: HeaderProps) {
     return (
         <header
@@ -41,6 +43,8 @@ export function Header({
             </div>
 
             <div className="flex items-center gap-3">
+                {children}
+
                 {lastUpdate && (
                     <div className="flex items-center gap-2 text-sm text-slate-500 mr-2">
                         <Clock className="h-4 w-4" />

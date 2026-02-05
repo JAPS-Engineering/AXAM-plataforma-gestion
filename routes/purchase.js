@@ -40,7 +40,8 @@ router.get('/suggested', async (req, res) => {
             algoritmo = ALGORITMOS.LINEAL,
             meses = 6,
             mesesCobertura = 2,
-            soloEnQuiebre = false
+            soloEnQuiebre = false,
+            frequency = 'MONTHLY' // Nuevo parámetro
         } = req.query;
 
         if (!proveedor) {
@@ -52,12 +53,14 @@ router.get('/suggested', async (req, res) => {
             meses: parseInt(meses, 10),
             mesesCobertura: parseInt(mesesCobertura, 10),
             soloEnQuiebre: soloEnQuiebre === 'true',
-            tipoFiltro
+            tipoFiltro,
+            frequency // Pasar frecuencia
         });
 
         res.json({
             proveedor,
             tipoFiltro,
+            frequency,
             algoritmo,
             meses: parseInt(meses, 10),
             mesesCobertura: parseInt(mesesCobertura, 10),

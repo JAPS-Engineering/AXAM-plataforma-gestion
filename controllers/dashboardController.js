@@ -50,44 +50,84 @@ function generateMonthsArray(mesesNum) {
  * - meses: 3 | 6 | 12 (período para el promedio y columnas visibles)
  * - marca: string (filtro opcional por prefijo SKU)
  */
+const isSyncing = { value: false };
+
 async function getDashboard(req, res) {
     try {
-        const { meses = 3, marca } = req.query;
+        const { meses = 3, marca, frequency = 'MONTHLY', live = 'true' } = req.query;
+        // console.log(`Dashboard Request: meses=${meses}, marca=${marca}, freq=${frequency}`); // Uncomment for debug
+
 
         // Validar parámetros
         const mesesNum = parseInt(meses, 10);
-        if (![3, 6, 12].includes(mesesNum)) {
-            return res.status(400).json({
-                error: 'El parámetro "meses" debe ser 3, 6 o 12'
-            });
+
+        // Validar frecuencia
+        if (!['MONTHLY', 'WEEKLY'].includes(frequency)) {
+            return res.status(400).json({ error: 'Frecuencia inválida. Use MONTHLY o WEEKLY' });
         }
 
+        // Validar meses según frecuencia (para weekly aceptamos 4, 8, 12 semanas)
+        const validPeriods = frequency === 'WEEKLY' ? [4, 8, 12] : [3, 6, 12];
         const mesActual = getMesActual();
-        const monthsArray = generateMonthsArray(mesesNum);
 
-        // Construir filtro de fecha para ventas históricas
-        const fechaInicio = subMonths(new Date(mesActual.ano, mesActual.mes - 1, 1), mesesNum);
-        const anoInicio = getYear(fechaInicio);
-        const mesInicio = getMonth(fechaInicio) + 1;
+        let headerLabels = [];
+        let filtroFecha = {};
 
-        const filtroFecha = {
-            AND: [
-                // Anterior al mes actual
-                {
-                    OR: [
-                        { ano: { lt: mesActual.ano } },
-                        { ano: mesActual.ano, mes: { lt: mesActual.mes } }
-                    ]
-                },
-                // Desde el mes de inicio
-                {
-                    OR: [
-                        { ano: { gt: anoInicio } },
-                        { ano: anoInicio, mes: { gte: mesInicio } }
-                    ]
-                }
-            ]
-        };
+        // ==========================================
+        // LÓGICA SEMANAL VS MENSUAL
+        // ==========================================
+        if (frequency === 'WEEKLY') {
+            const { getISOWeek, getYear, subWeeks } = require('date-fns');
+            const now = new Date();
+
+            // Generar headers para las últimas N semanas 
+            const weeksArray = [];
+            for (let i = mesesNum; i >= 1; i--) {
+                const date = subWeeks(now, i);
+                const w = getISOWeek(date);
+                const y = getYear(date);
+                weeksArray.push({
+                    ano: y,
+                    semana: w,
+                    label: `S${w}`
+                });
+            }
+            headerLabels = weeksArray.map(w => w.label);
+
+            const yearRef = weeksArray[0].ano;
+            filtroFecha = {
+                ano: { gte: yearRef - 1 }
+            };
+
+        } else {
+            // LÓGICA MENSUAL (Original)
+            const monthsArray = generateMonthsArray(mesesNum);
+            headerLabels = monthsArray.map(m => m.label);
+
+            // Construir filtro de fecha para ventas históricas
+            const fechaInicio = subMonths(new Date(mesActual.ano, mesActual.mes - 1, 1), mesesNum);
+            const anoInicio = getYear(fechaInicio);
+            const mesInicio = getMonth(fechaInicio) + 1;
+
+            filtroFecha = {
+                AND: [
+                    // Anterior al mes actual
+                    {
+                        OR: [
+                            { ano: { lt: mesActual.ano } },
+                            { ano: mesActual.ano, mes: { lt: mesActual.mes } }
+                        ]
+                    },
+                    // Desde el mes de inicio
+                    {
+                        OR: [
+                            { ano: { gt: anoInicio } },
+                            { ano: anoInicio, mes: { gte: mesInicio } }
+                        ]
+                    }
+                ]
+            };
+        }
 
         // Filtro de marca
         const filtroMarca = marca ? {
@@ -100,50 +140,64 @@ async function getDashboard(req, res) {
         const today = getChileDate();
         const startOfToday = new Date(today);
         startOfToday.setHours(0, 0, 0, 0);
-
         const now = new Date(today);
 
         let ventasHoyMap = new Map();
-        try {
-            const docsHoy = await getAllSales(startOfToday, now);
-            ventasHoyMap = aggregateSalesByProduct(docsHoy);
-        } catch (error) {
-            logError(`Dashboard warning: Error obteniendo ventas live: ${error.message}`);
+
+        if (live !== 'false') {
+            try {
+                const docsHoy = await getAllSales(startOfToday, now);
+                ventasHoyMap = aggregateSalesByProduct(docsHoy);
+            } catch (error) {
+                logError(`Dashboard warning: Error obteniendo ventas live: ${error.message}`);
+            }
         }
 
-        // Obtener todos los productos con sus datos base
-        // INCLUIR PEDIDOS del mes actual para mostrar compraRealizar guardada
+        // ==========================================
+        // QUERY A LA BASE DE DATOS
+        // ==========================================
+
+        // Preparar include dinámico según frecuencia
+        const includeQuery = {
+            ventasActuales: true,
+            pedidos: {
+                where: {
+                    ano: mesActual.ano,
+                    mes: mesActual.mes
+                }
+            }
+        };
+
+        if (frequency === 'WEEKLY') {
+            includeQuery.ventasSemanales = {
+                where: filtroFecha,
+                orderBy: [{ ano: 'asc' }, { semana: 'asc' }]
+            };
+        } else {
+            includeQuery.ventasHistoricas = {
+                where: filtroFecha,
+                orderBy: [{ ano: 'asc' }, { mes: 'asc' }]
+            };
+        }
+
         const productosDB = await prisma.producto.findMany({
             where: filtroMarca,
-            include: {
-                ventasHistoricas: {
-                    where: filtroFecha,
-                    orderBy: [{ ano: 'asc' }, { mes: 'asc' }]
-                },
-                ventasActuales: true,
-                pedidos: {
-                    where: {
-                        ano: mesActual.ano,
-                        mes: mesActual.mes
-                    }
-                }
-            },
+            include: includeQuery,
             orderBy: { sku: 'asc' }
         });
 
-        // Procesar y calcular datos del dashboard
+        // ==========================================
+        // PROCESAMIENTO
+        // ==========================================
+
         const rows = productosDB.map(producto => {
-            const ventasHistoricas = producto.ventasHistoricas || [];
             const ventasActualesDB = producto.ventasActuales || [];
             const pedidoActual = producto.pedidos?.[0] || null;
 
-            // Datos DB (hasta ayer)
-            // Sumar ventas de TODOS los vendedores para este producto
+            // Datos actuales
             let cantidadMesActual = ventasActualesDB.reduce((sum, v) => sum + (v.cantidadVendida || 0), 0);
-
-            // Stock es global por SKU, así que tomamos el de cualquiera de los registros (o 0 si no hay)
             const stockActual = ventasActualesDB.length > 0 ? ventasActualesDB[0].stockActual : 0;
-            const stockMinimo = producto.stockMinimo; // Puede ser null
+            const stockMinimo = producto.stockMinimo;
 
             // Sumar ventas live de HOY
             const ventaHoy = ventasHoyMap.get(producto.sku);
@@ -151,35 +205,84 @@ async function getDashboard(req, res) {
                 cantidadMesActual += ventaHoy.cantidad;
             }
 
-            // Crear mapa de ventas por mes
-            const ventasPorMes = {};
-            for (const venta of ventasHistoricas) {
-                const key = `${venta.ano}-${venta.mes}`;
-                ventasPorMes[key] = venta.cantidadVendida;
+            let dataPoints = [];
+            let promedio = 0;
+            let compraSugerida = 0;
+
+            if (frequency === 'WEEKLY') {
+                const ventasSemanales = producto.ventasSemanales || [];
+                const { getISOWeek, getYear, subWeeks } = require('date-fns');
+                const now = new Date();
+
+                // Generar las N semanas atrás
+                const targetWeeks = [];
+                for (let i = mesesNum; i >= 1; i--) {
+                    const d = subWeeks(now, i);
+                    targetWeeks.push({ y: getYear(d), w: getISOWeek(d) });
+                }
+
+                // Mapear ventas a las semanas objetivo
+                const ventasMap = new Map();
+                ventasSemanales.forEach(v => ventasMap.set(`${v.ano}-${v.semana}`, v.cantidadVendida));
+
+                dataPoints = targetWeeks.map(t => ({
+                    ano: t.y,
+                    mes: t.w, // Reusamos campo mes para semana en frontend o ajustamos tipo
+                    label: `S${t.w}`,
+                    cantidad: ventasMap.get(`${t.y}-${t.w}`) || 0
+                }));
+
+                // Promedio Semanal
+                const totalCant = dataPoints.reduce((sum, p) => sum + p.cantidad, 0);
+                promedio = totalCant / dataPoints.length;
+
+                // Sugerido Semanal
+                // Cobertura deseada por defecto (ej. 4 semanas ~ 1 mes)
+                // Usamos la misma lógica base: (Promedio * Cobertura) - Stock
+                const semanasCobertura = 4;
+                let sugeridoBase = (promedio * semanasCobertura) - stockActual;
+
+                // Ajuste simple: Restamos lo que ya se vendió esta semana "en curso" (aprox cantidadMesActual / 4)
+                // O mejor aun, simplemente Promedio - Stock (cobertura 1 semana)
+                // Para mantener consistencia con mensual (que usa meses=6 cobertura=1? No, mensual usa mesesCobertura implicito 1 o parametro)
+
+                // En getDashboard no recibimos mesesCobertura, asumimos lógica standard
+                // Mensual: Promedio (1 mes) - Stock - VentaActual
+
+                // Semanal: PromedioSemanal * (Cobetura en Semanas) - Stock
+                // Asumamos cobertura de 2 meses = 8 semanas para ser seguros, o 4 semanas.
+                // Usemos 4 semanas (1 mes de stock)
+
+                compraSugerida = Math.round((promedio * 4) - stockActual);
+
+            } else {
+                // MENSUAL
+                const ventasHistoricas = producto.ventasHistoricas || [];
+                const monthsArray = generateMonthsArray(mesesNum);
+
+                const ventasPorMes = {};
+                for (const v of ventasHistoricas) {
+                    ventasPorMes[`${v.ano}-${v.mes}`] = v.cantidadVendida;
+                }
+
+                dataPoints = monthsArray.map(m => ({
+                    ano: m.ano,
+                    mes: m.mes,
+                    label: m.label,
+                    cantidad: ventasPorMes[`${m.ano}-${m.mes}`] || 0
+                }));
+
+                const totalCant = dataPoints.reduce((sum, v) => sum + v.cantidad, 0);
+                promedio = totalCant / dataPoints.length;
+
+                // Fórmula estándar mensual
+                compraSugerida = Math.round(promedio - stockActual - cantidadMesActual);
             }
 
-            // Generar array de ventas para cada mes del período
-            const ventasMeses = monthsArray.map(m => ({
-                ano: m.ano,
-                mes: m.mes,
-                label: m.label,
-                cantidad: ventasPorMes[`${m.ano}-${m.mes}`] || 0
-            }));
-
-            // Calcular promedio simple (dividir entre TODOS los meses del período)
-            const totalCantidad = ventasMeses.reduce((sum, v) => sum + v.cantidad, 0);
-            const promedio = totalCantidad / ventasMeses.length;
-
-            // Calcular compra sugerida
-            // Fórmula base: Promedio - Stock - Venta del mes actual (DB + Hoy)
-            let compraSugerida = Math.round(promedio - stockActual - cantidadMesActual);
-
-            // Si hay Stock Óptimo, ese es el objetivo principal
+            // Lógica común de Stock Óptimo y Mínimo
             if (producto.stockOptimo && producto.stockOptimo > 0) {
                 compraSugerida = Math.max(0, producto.stockOptimo - stockActual);
             } else {
-                // Lógica estándar promedio * N meses
-                // Si hay stockMinimo, asegurar que no baje de ahí
                 if (stockMinimo !== null && stockMinimo > 0) {
                     const faltaParaMinimo = Math.round(stockMinimo - stockActual);
                     if (faltaParaMinimo > 0) {
@@ -188,7 +291,6 @@ async function getDashboard(req, res) {
                 }
             }
 
-            // Determinar si está bajo el mínimo configurado
             const bajoMinimo = stockMinimo !== null && stockActual < stockMinimo;
 
             return {
@@ -198,29 +300,33 @@ async function getDashboard(req, res) {
                     descripcion: producto.descripcion,
                     familia: producto.familia,
                     stockMinimo: stockMinimo,
-                    stockOptimo: producto.stockOptimo // Incluir Stock Óptimo
+                    stockOptimo: producto.stockOptimo,
+                    dv: producto.dv,
+                    costo: producto.precioUltimaCompra,
+                    factorEmpaque: producto.factorEmpaque
                 },
-                ventasMeses,
+                ventasMeses: dataPoints, // Frontend lo renderizará igual
                 promedio: parseFloat(promedio.toFixed(2)),
                 mesActual: {
                     ano: mesActual.ano,
                     mes: mesActual.mes,
-                    ventaActual: cantidadMesActual,
+                    ventaActual: cantidadMesActual, // Ojo: en semanal esto sigue siendo venta MES actual
                     stockActual: stockActual
                 },
                 compraSugerida,
-                bajoMinimo, // Flag para el frontend
-                // Mostrar compraRealizar solo si hay un pedido guardado (NO auto-completar)
-                compraRealizar: pedidoActual?.cantidad ?? null
+                bajoMinimo,
+                compraRealizar: pedidoActual?.cantidad ?? null,
+                tipoCompra: pedidoActual?.tipo || 'OC'
             };
         });
+
 
         res.json({
             meta: {
                 mesesConsultados: mesesNum,
                 marca: marca || null,
                 mesActual: mesActual,
-                columnas: monthsArray.map(m => m.label),
+                columnas: headerLabels,
                 totalProductos: rows.length,
                 generadoEn: new Date().toISOString()
             },
@@ -266,13 +372,15 @@ async function saveOrden(req, res) {
                     }
                 },
                 update: {
-                    cantidad: item.cantidad
+                    cantidad: item.cantidad,
+                    tipo: item.tipo || 'OC'
                 },
                 create: {
                     productoId: item.productoId,
                     ano: mesActual.ano,
                     mes: mesActual.mes,
-                    cantidad: item.cantidad
+                    cantidad: item.cantidad,
+                    tipo: item.tipo || 'OC'
                 }
             });
             saved++;
@@ -400,6 +508,15 @@ async function syncStream(req, res) {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
+    if (isSyncing.value) {
+        logWarning('Sync requested but already in progress');
+        res.write(`data: ${JSON.stringify({ step: 'error', message: 'Sincronización en curso. Intente nuevamente.' })}\n\n`);
+        res.end();
+        return;
+    }
+
+    isSyncing.value = true;
+
     const sendEvent = (data) => {
         res.write(`data: ${JSON.stringify(data)}\n\n`);
     };
@@ -407,6 +524,7 @@ async function syncStream(req, res) {
     const mesActual = getMesActual();
 
     try {
+        sendEvent({ step: 'start', message: 'Iniciando proceso...' }); // This line was added based on the instruction.
         logInfo('Iniciando stream de sincronización...');
         sendEvent({ step: 'start', message: 'Conectando con Manager+...' });
 
@@ -460,11 +578,13 @@ async function syncStream(req, res) {
         }
 
         sendEvent({ step: 'complete', message: '¡Sincronización finalizada!' });
+        isSyncing.value = false;
         res.end();
 
     } catch (error) {
         logError(`Error en stream: ${error.message}`);
         sendEvent({ step: 'error', message: `Error: ${error.message}` });
+        isSyncing.value = false;
         res.end();
     }
 }

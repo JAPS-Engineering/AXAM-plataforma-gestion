@@ -9,11 +9,12 @@ import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 interface ProductTableProps {
     productos: ProductoDashboard[];
     columnas: string[];
-    onOrderUpdated?: () => void;
+    onOrderUpdated?: (productoId: number, cantidad: number, tipo: string) => void;
     pendientesMap?: Record<string, number>;
     // Sorting props
     sortConfig: SortConfig;
     onSort: (column: SortColumn) => void;
+    frequency?: 'MONTHLY' | 'WEEKLY';
 }
 
 export type SortDirection = "asc" | "desc" | null;
@@ -31,14 +32,14 @@ function formatNumber(num: number | null | undefined): string {
     return n.toLocaleString("es-CL");
 }
 
-interface SortButtonProps {
+export interface SortButtonProps {
     column: SortColumn;
     currentSort: SortConfig;
     onSort: (column: SortColumn) => void;
     isNumeric?: boolean;
 }
 
-function SortButton({ column, currentSort, onSort, isNumeric = false }: SortButtonProps) {
+export function SortButton({ column, currentSort, onSort, isNumeric = false }: SortButtonProps) {
     const isActive = currentSort.column === column;
     const direction = isActive ? currentSort.direction : null;
 
@@ -65,102 +66,12 @@ function SortButton({ column, currentSort, onSort, isNumeric = false }: SortButt
     );
 }
 
-interface EditableCellProps {
-    productoId: number;
-    initialValue: number | null;
-    onSave: (productoId: number, value: number) => Promise<void>;
-}
+import { OrderCell } from "./order-cell";
 
-function EditableCell({ productoId, initialValue, onSave }: EditableCellProps) {
-    const [value, setValue] = useState<string>(initialValue?.toString() ?? "");
-    const [isSaving, setIsSaving] = useState(false);
-    const [hasChanged, setHasChanged] = useState(false);
-    const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const originalValue = useRef(initialValue);
-
-    useEffect(() => {
-        setValue(initialValue?.toString() ?? "");
-        originalValue.current = initialValue;
-    }, [initialValue]);
-
-    const handleSave = useCallback(async (newValue: string) => {
-        const numValue = newValue === "" ? 0 : parseFloat(newValue);
-        if (isNaN(numValue) || numValue < 0) {
-            setValue(originalValue.current?.toString() ?? "");
-            return;
-        }
-
-        if (numValue === originalValue.current) {
-            setHasChanged(false);
-            return;
-        }
-
-        setIsSaving(true);
-        try {
-            await onSave(productoId, numValue);
-            originalValue.current = numValue;
-            setHasChanged(false);
-        } catch (error) {
-            setValue(originalValue.current?.toString() ?? "");
-            console.error("Error guardando:", error);
-        } finally {
-            setIsSaving(false);
-        }
-    }, [onSave, productoId]);
-
-    const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-        const newValue = e.target.value;
-        setValue(newValue);
-        setHasChanged(true);
-
-        // Debounce auto-save
-        if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-        }
-        timeoutRef.current = setTimeout(() => {
-            handleSave(newValue);
-        }, 800);
-    }, [handleSave]);
-
-    const handleBlur = useCallback(() => {
-        if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-            timeoutRef.current = null;
-        }
-        if (hasChanged) {
-            handleSave(value);
-        }
-    }, [hasChanged, value, handleSave]);
-
-    const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === "Enter") {
-            e.currentTarget.blur();
-        }
-    }, []);
-
-    return (
-        <input
-            type="text"
-            inputMode="numeric"
-            value={value}
-            onChange={handleChange}
-            onBlur={handleBlur}
-            onKeyDown={handleKeyDown}
-            className={cn(
-                "w-full px-2 py-1 text-right bg-amber-50 border border-transparent rounded",
-                "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white",
-                "hover:border-amber-300 transition-colors",
-                isSaving && "opacity-50"
-            )}
-            disabled={isSaving}
-        />
-    );
-}
-
-export function ProductTable({ productos, columnas, onOrderUpdated, pendientesMap, sortConfig, onSort }: ProductTableProps) {
-    const handleSaveOrder = useCallback(async (productoId: number, cantidad: number) => {
-        await saveOrders([{ productoId, cantidad }]);
-        onOrderUpdated?.();
+export function ProductTable({ productos, columnas, onOrderUpdated, pendientesMap, sortConfig, onSort, frequency = 'MONTHLY' }: ProductTableProps) {
+    const handleSaveOrder = useCallback(async (productoId: number, cantidad: number, tipo: string) => {
+        await saveOrders([{ productoId, cantidad, tipo }]);
+        onOrderUpdated?.(productoId, cantidad, tipo);
     }, [onOrderUpdated]);
 
     if (productos.length === 0) {
@@ -217,14 +128,14 @@ export function ProductTable({ productos, columnas, onOrderUpdated, pendientesMa
                         {/* Promedio */}
                         <th className="px-4 py-3 text-right font-semibold text-slate-900 bg-slate-200/50 border-b border-slate-300 border-l border-slate-200 min-w-[100px]">
                             <div className="flex items-center justify-end">
-                                Promedio
+                                {frequency === 'WEEKLY' ? 'Prom. Semanal' : 'Promedio'}
                                 <SortButton column="promedio" currentSort={sortConfig} onSort={onSort} isNumeric />
                             </div>
                         </th>
                         {/* Mes Actual */}
                         <th className="px-4 py-3 text-right font-semibold text-blue-700 bg-blue-50 border-b border-blue-200 border-l-2 border-l-blue-400 min-w-[100px]">
                             <div className="flex items-center justify-end">
-                                Venta Mes
+                                {frequency === 'WEEKLY' ? 'Venta Semana' : 'Venta Mes'}
                                 <SortButton column="ventaMes" currentSort={sortConfig} onSort={onSort} isNumeric />
                             </div>
                         </th>
@@ -339,9 +250,10 @@ export function ProductTable({ productos, columnas, onOrderUpdated, pendientesMa
                                     {formatNumber(sugeridoFinal)}
                                 </td>
                                 <td className="px-4 py-2 border-b border-amber-100 bg-amber-50/30">
-                                    <EditableCell
+                                    <OrderCell
                                         productoId={item.producto.id}
                                         initialValue={item.compraRealizar}
+                                        initialType={item.tipoCompra}
                                         onSave={handleSaveOrder}
                                     />
                                 </td>
@@ -353,5 +265,3 @@ export function ProductTable({ productos, columnas, onOrderUpdated, pendientesMa
         </div>
     );
 }
-
-

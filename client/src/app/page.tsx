@@ -22,6 +22,7 @@ export default function DashboardPage() {
   // Filters state
   const [marca, setMarca] = useState("");
   const [meses, setMeses] = useState(3);
+  const [frequency, setFrequency] = useState<'MONTHLY' | 'WEEKLY'>('MONTHLY');
   const [busqueda, setBusqueda] = useState("");
 
   const [salesStatus, setSalesStatus] = useState<'all' | 'with_sales' | 'without_sales'>('all');
@@ -40,9 +41,13 @@ export default function DashboardPage() {
 
   // Data fetching
   const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ["dashboard", meses, marca],
-    queryFn: () => fetchDashboard(meses, marca || undefined),
+    queryKey: ["dashboard", meses, marca, frequency],
+    queryFn: () => fetchDashboard(meses, marca || undefined, frequency),
   });
+
+  // ... (rest of code) ...
+
+
 
   // Refetch on window focus (fix for sync issue)
   useEffect(() => {
@@ -414,6 +419,17 @@ export default function DashboardPage() {
             onMesesChange={handleFilterChange(setMeses)}
             busqueda={busqueda}
             onBusquedaChange={handleFilterChange(setBusqueda)}
+            frequency={frequency}
+            onFrequencyChange={(newFreq) => {
+              setFrequency(newFreq);
+              // Set default period when switching
+              if (newFreq === 'WEEKLY') {
+                setMeses(4); // Default 4 weeks
+              } else {
+                setMeses(3); // Default 3 months
+              }
+              setCurrentPage(1);
+            }}
 
             salesStatus={salesStatus}
             onSalesStatusChange={handleFilterChange(setSalesStatus)}
@@ -450,10 +466,36 @@ export default function DashboardPage() {
             <ProductTable
               productos={paginatedProducts}
               columnas={data?.meta?.columnas || []}
-              onOrderUpdated={() => refetch()}
+              onOrderUpdated={(id, cant, tipo) => {
+                // Optimistic update
+                queryClient.setQueryData(
+                  ["dashboard", meses, marca, frequency],
+                  (oldData: any) => {
+                    if (!oldData) return oldData;
+                    return {
+                      ...oldData,
+                      data: oldData.data.map((p: any) =>
+                        p.producto.id === id
+                          ? { ...p, compraRealizar: cant, tipoCompra: tipo }
+                          : p
+                      ),
+                      // Also update productos array if it exists separately (it does in the response structure)
+                      productos: oldData.productos?.map((p: any) =>
+                        p.producto.id === id
+                          ? { ...p, compraRealizar: cant, tipoCompra: tipo }
+                          : p
+                      )
+                    };
+                  }
+                );
+                // Also invalidate loosely to ensure eventually consistent, but maybe not immediate refetch?
+                // Or simply rely on optimistic update. 
+                // Given the bug is rate limit, we skip refetch().
+              }}
               pendientesMap={pendientesData}
               sortConfig={sortConfig}
               onSort={handleSort}
+              frequency={frequency}
             />
           )}
 

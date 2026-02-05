@@ -19,6 +19,10 @@ export interface ProductoInfo {
     descripcion: string;
     familia?: string;
     stockMinimo?: number | null;
+    stockOptimo?: number | null;
+    dv?: string | null;
+    costo?: number | null;
+    factorEmpaque?: number;
 }
 
 export interface MesVenta {
@@ -38,6 +42,7 @@ export interface ProductoDashboard {
     promedio: number;
     compraSugerida: number;
     compraRealizar: number | null;
+    tipoCompra?: string; // 'OC' | 'OCI'
     bajoMinimo?: boolean;
 }
 
@@ -53,8 +58,11 @@ export interface DashboardResponse {
 }
 
 // API Functions
-export async function fetchDashboard(meses: number, marca?: string): Promise<DashboardResponse> {
-    const params = new URLSearchParams({ meses: meses.toString() });
+export async function fetchDashboard(meses: number, marca?: string, frequency: 'MONTHLY' | 'WEEKLY' = 'MONTHLY'): Promise<DashboardResponse> {
+    const params = new URLSearchParams({
+        meses: meses.toString(),
+        frequency
+    });
     if (marca) {
         params.append("marca", marca);
     }
@@ -65,6 +73,7 @@ export async function fetchDashboard(meses: number, marca?: string): Promise<Das
 export interface SaveOrderItem {
     productoId: number;
     cantidad: number;
+    tipo?: string;
 }
 
 export async function saveOrders(items: SaveOrderItem[]): Promise<void> {

@@ -29,42 +29,69 @@ const ALGORITMOS = {
 async function calculateSuggestedPurchase(sku, options = {}) {
     const {
         algoritmo = ALGORITMOS.LINEAL,
-        meses = 6,
-        mesesCobertura = 2
+        meses = 6, // Se interpreta como "periodos"
+        mesesCobertura = 2, // Se interpreta como "periodos de cobertura"
+        frequency = 'MONTHLY' // 'MONTHLY' | 'WEEKLY'
     } = options;
 
     // Obtener mes actual para buscar pedido
     const mesActual = getMesActual();
 
-    // Obtener producto con ventas, stock y pedido actual
-    const producto = await prisma.producto.findUnique({
-        where: { sku },
-        include: {
-            ventasHistoricas: {
-                orderBy: [{ ano: 'desc' }, { mes: 'desc' }],
-                take: meses
-            },
-            ventasActuales: true,
-            pedidos: {
-                where: {
-                    ano: mesActual.ano,
-                    mes: mesActual.mes
-                }
+    // Query Base (para stock y pedidos, que son comunes)
+    const queryInclude = {
+        ventasActuales: true,
+        pedidos: {
+            where: {
+                ano: mesActual.ano,
+                mes: mesActual.mes
             }
         }
+    };
+
+    // Agregar la relación histórica correcta según frecuencia
+    if (frequency === 'WEEKLY') {
+        const { getISOWeek, getYear } = require('date-fns');
+        const now = new Date();
+        const currentWeek = getISOWeek(now);
+        const currentYear = getYear(now);
+
+        // No es tan trivial filtrar las "últimas N semanas" directamente en el include con take simple si hay huecos
+        // pero por simplicidad inicial usamos take + orderBy
+        queryInclude.ventasSemanales = {
+            orderBy: [{ ano: 'desc' }, { semana: 'desc' }],
+            take: meses // Tomar ultimas N semanas
+        };
+    } else {
+        queryInclude.ventasHistoricas = {
+            orderBy: [{ ano: 'desc' }, { mes: 'desc' }],
+            take: meses
+        };
+    }
+
+    // Obtener producto
+    const producto = await prisma.producto.findUnique({
+        where: { sku },
+        include: queryInclude
     });
 
     if (!producto) {
         return { error: 'Producto no encontrado', sku };
     }
 
-    const ventasHistoricas = producto.ventasHistoricas || [];
+    // Normalizar historial a una estructura común
+    let ventasHistoricas = [];
+    if (frequency === 'WEEKLY') {
+        ventasHistoricas = producto.ventasSemanales || [];
+    } else {
+        ventasHistoricas = producto.ventasHistoricas || [];
+    }
     const ventaActual = (producto.ventasActuales && producto.ventasActuales[0]) || {};
     const stockActual = ventaActual.stockActual || 0;
 
     // Obtener pedido pendiente actual
     const pedido = (producto.pedidos && producto.pedidos[0]) || {};
     const compraRealizar = pedido.cantidad !== undefined ? pedido.cantidad : null;
+    const tipoCompra = pedido.tipo || 'OC';
 
     // Si no hay ventas históricas, no podemos calcular
     if (ventasHistoricas.length === 0) {
@@ -92,9 +119,13 @@ async function calculateSuggestedPurchase(sku, options = {}) {
     let tendencia = 0;
     let prediccionProximoMes = promedioVenta;
 
+    // Ajustar terminología según frecuencia (mes vs semana)
+    // El frontend envía "meses" y "mesesCobertura", pero si estamos en modo semanal,
+    // conceptualmente son "periodos" (semanas).
+    // La lógica matemática es agnóstica a la unidad de tiempo.
+
     if (algoritmo === ALGORITMOS.LINEAL) {
-        // Cálculo lineal simple: promedio * meses de cobertura - stock actual
-        // Si hay Stock Óptimo, ese es el objetivo. Si no, calcular cobertura dinámica.
+        // Cálculo lineal simple: promedio * periodos de cobertura - stock actual
         let stockObjetivo = producto.stockOptimo || (promedioVenta * mesesCobertura);
         cantidadSugerida = Math.max(0, stockObjetivo - stockActual);
 
@@ -103,7 +134,7 @@ async function calculateSuggestedPurchase(sku, options = {}) {
         // Cálculo con tendencia (regresión lineal simple)
         const n = ventasHistoricas.length;
         if (n >= 2) {
-            // Invertir para que x=0 sea el mes más antiguo
+            // Invertir para que x=0 sea el periodo más antiguo
             const ventasOrdenadas = [...ventasHistoricas].reverse();
 
             let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
@@ -114,11 +145,11 @@ async function calculateSuggestedPurchase(sku, options = {}) {
                 sumX2 += i * i;
             });
 
-            // Pendiente de la recta (tendencia mensual)
+            // Pendiente de la recta (tendencia por periodo)
             const pendiente = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
             tendencia = pendiente;
 
-            // Predicción para el próximo mes (x = n)
+            // Predicción para el próximo periodo (x = n)
             prediccionProximoMes = promedioVenta + (pendiente * (n - (n - 1) / 2));
 
             // Cantidad sugerida considerando la predicción
@@ -152,13 +183,14 @@ async function calculateSuggestedPurchase(sku, options = {}) {
         stockActual,
         stockMinimo: producto.stockMinimo,
         stockOptimo: producto.stockOptimo,
-        promedioVenta: Math.round(promedioVenta),
-        tendencia: parseFloat(tendencia.toFixed(2)),
-        prediccionProximoMes: Math.round(prediccionProximoMes),
+        promedioVenta: Math.round(promedioVenta), // Promedio por periodo (mes o semana)
+        tendencia: parseFloat(tendencia.toFixed(2)), // Tendencia por periodo
+        prediccionProximoMes: Math.round(prediccionProximoMes), // Predicción para prox periodo
         cantidadSugerida,
-        mesesCobertura,
+        mesesCobertura, // Periodos de cobertura
         algoritmo,
         compraRealizar,
+        tipoCompra,
         factorEmpaque: producto.factorEmpaque
     };
 }
@@ -276,7 +308,8 @@ async function generateSuggestedPurchases(filtroValor, options = {}) {
         meses = 6,
         mesesCobertura = 2,
         soloEnQuiebre = false,
-        tipoFiltro = 'proveedor' // 'proveedor' o 'familia'
+        tipoFiltro = 'proveedor', // 'proveedor' o 'familia'
+        frequency = 'MONTHLY'
     } = options;
 
     // Construir filtro dinámico según el tipo
@@ -301,7 +334,8 @@ async function generateSuggestedPurchases(filtroValor, options = {}) {
             calculateSuggestedPurchase(producto.sku, {
                 algoritmo,
                 meses,
-                mesesCobertura
+                mesesCobertura,
+                frequency
             })
         )
     );

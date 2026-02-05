@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Package2, ChevronLeft, ChevronRight, LayoutDashboard, AlertTriangle, ShoppingCart, TrendingUp, BarChart3, Target, Users, DollarSign, Percent } from "lucide-react";
+import { Package2, ChevronLeft, ChevronRight, LayoutDashboard, AlertTriangle, ShoppingCart, TrendingUp, BarChart3, Target, Users, DollarSign, Percent, FileText } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -17,6 +17,7 @@ export function Sidebar({ className }: SidebarProps) {
     const navItems = [
         { href: "/", label: "Órdenes de Compra", icon: LayoutDashboard },
         { href: "/compras", label: "Análisis Personalizado", icon: ShoppingCart },
+        { href: "/ocs-ocis", label: "OCs y OCIs", icon: FileText },
         { href: "/minimos", label: "Stock Mínimo", icon: AlertTriangle },
         { href: "/ventas", label: "Reporte de Ingresos", icon: TrendingUp },
         { href: "/ventas/graficos", label: "Análisis de Mercado", icon: BarChart3 },

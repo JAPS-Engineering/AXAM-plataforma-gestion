@@ -12,7 +12,7 @@ require('dotenv').config();
 const { format, subDays, getYear, getMonth, startOfMonth, endOfMonth, eachDayOfInterval } = require('date-fns');
 const { getPrismaClient } = require('../prisma/client');
 const { logSection, logSuccess, logError, logWarning, logInfo } = require('../utils/logger');
-const { getDailySales, getMonthlySales, getCurrentStock, getAllProducts, getWhiteListSKUs } = require('../services/salesService');
+const { getDailySales, getMonthlySales, getWeeklySales, getCurrentStock, getAllProducts, getWhiteListSKUs } = require('../services/salesService');
 
 const prisma = getPrismaClient();
 
@@ -324,6 +324,13 @@ async function syncYesterday() {
         // volvemos a calcular el mes completo hasta ayer.
         await syncFullMonth(year, month);
 
+        // 3. Sincronizar Semana actual/anterior
+        // Calculate which week "yesterday" belongs to and sync it
+        const { getISOWeek } = require('date-fns');
+        const week = getISOWeek(yesterday);
+        const yYear = year; // Use year of yesterday
+        await syncWeek(yYear, week);
+
         // 3. Actualizar datos del mes actual (stock + ventas acumuladas en VentaActual)
         await syncCurrentMonthData();
 
@@ -476,6 +483,109 @@ async function syncFullMonth(year, month) {
 }
 
 /**
+ * Sincronizar semana específica
+ * @param {number} year 
+ * @param {number} week 
+ */
+async function syncWeek(year, week) {
+    logSection(`SINCRONIZANDO SEMANA ${week}/${year}`);
+
+    try {
+        const { sales, documentsCount } = await getWeeklySales(year, week);
+
+        if (sales.size === 0) {
+            logWarning(`Sin ventas para Semana ${week}/${year}`);
+            return { processed: 0, updated: 0 };
+        }
+
+        // Obtener productos y mapa de IDs
+        const allProducts = await prisma.producto.findMany({ select: { id: true, sku: true } });
+        const productMap = new Map(allProducts.map(p => [p.sku, p.id]));
+
+        // Obtener ventas existentes para esta semana
+        const existingSales = await prisma.ventaSemanal.findMany({
+            where: { ano: year, semana: week }
+        });
+        const salesMap = new Map();
+        existingSales.forEach(s => salesMap.set(`${s.productoId}-${s.vendedor || ''}`, s));
+
+        const updates = [];
+        const creates = [];
+        const vendedoresVistos = new Set();
+
+        for (const [key, data] of sales) {
+            const { sku, vendedor } = data;
+
+            let productoId = productMap.get(sku);
+            if (!productoId) continue; // Si no existe el producto, se salta (debería existir por syncs previos)
+
+            const vendKey = vendedor || '';
+            const mapKey = `${productoId}-${vendKey}`;
+            const existingRecord = salesMap.get(mapKey);
+
+            if (existingRecord) {
+                // Update
+                if (existingRecord.cantidadVendida !== data.cantidad || Math.abs(existingRecord.montoNeto - data.montoNeto) > 1) {
+                    updates.push(prisma.ventaSemanal.update({
+                        where: { id: existingRecord.id },
+                        data: { cantidadVendida: data.cantidad, montoNeto: data.montoNeto }
+                    }));
+                }
+            } else {
+                // Create
+                creates.push(prisma.ventaSemanal.create({
+                    data: {
+                        productoId,
+                        ano: year,
+                        semana: week,
+                        vendedor: vendKey,
+                        cantidadVendida: data.cantidad,
+                        montoNeto: data.montoNeto
+                    }
+                }));
+            }
+        }
+
+        // Batch exec
+        const batchSize = 50;
+        if (creates.length > 0) {
+            for (let i = 0; i < creates.length; i += batchSize) await Promise.all(creates.slice(i, i + batchSize));
+        }
+        if (updates.length > 0) {
+            for (let i = 0; i < updates.length; i += batchSize) await Promise.all(updates.slice(i, i + batchSize));
+        }
+
+        const updated = creates.length + updates.length;
+        logSuccess(`Semana ${week}: ${documentsCount} docs, ${updated} registros actualizados`);
+        return { processed: documentsCount, updated };
+
+    } catch (error) {
+        logError(`Error sincronizando Semana ${week}: ${error.message}`);
+        throw error;
+    }
+}
+
+/**
+ * Sincronizar últimas N semanas
+ */
+async function syncWeeksBack(weeks = 12) {
+    logSection(`SINCRONIZANDO ÚLTIMAS ${weeks} SEMANAS`);
+    const { subWeeks, getISOWeek, getYear } = require('date-fns');
+
+    const today = new Date();
+
+    for (let i = 0; i < weeks; i++) {
+        const targetDate = subWeeks(today, i);
+        const week = getISOWeek(targetDate);
+        const year = getYear(targetDate);
+
+        await syncWeek(year, week);
+    }
+
+    logSuccess('Sincronización semanal completada');
+}
+
+/**
  * Sincronización inicial (primer uso)
  * Sincroniza los últimos N meses
  */
@@ -584,6 +694,11 @@ async function main() {
             await syncCurrentMonthData(true); // Include today for manual sync
             break;
 
+        case 'weeks':
+            const nWeeks = parseInt(args[1]) || 12;
+            await syncWeeksBack(nWeeks);
+            break;
+
         case 'products':
             await syncNewProducts();
             break;
@@ -597,6 +712,7 @@ Comandos:
   init, initial [N] - Sincronización inicial de N meses (defecto: 12)
   full, 2021        - Sincronización completa desde enero 2021
   month [año] [mes] - Sincronizar un mes específico
+  weeks [N]         - Sincronizar últimas N semanas (default 12)
   current           - Sincronizar solo datos del mes actual
   products          - Sincronizar solo productos
             `);
