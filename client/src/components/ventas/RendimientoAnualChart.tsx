@@ -11,6 +11,7 @@ interface RendimientoAnualChartProps {
     onYearCompChange?: (year: number) => void;
     title?: string;
     subtitle?: string;
+    entityType?: string;
 }
 
 export function RendimientoAnualChart({
@@ -20,7 +21,8 @@ export function RendimientoAnualChart({
     onYearRefChange,
     onYearCompChange,
     title = "Rendimiento Anual Acumulado (Comparativa)",
-    subtitle
+    subtitle,
+    entityType = "Venta"
 }: RendimientoAnualChartProps) {
     if (loading) {
         return (
@@ -134,7 +136,7 @@ export function RendimientoAnualChart({
 
                                                 {/* Mensual Row */}
                                                 <div className="col-span-2 flex items-center justify-between">
-                                                    <span className="text-xs text-slate-500 font-medium">Venta Mensual</span>
+                                                    <span className="text-xs text-slate-500 font-medium">{entityType} Mensual</span>
                                                 </div>
                                                 <div className="text-right text-sm text-slate-600">{formatTooltipCLP(data.mensualAnterior)}</div>
                                                 <div className="text-right text-sm font-bold text-blue-600">{formatTooltipCLP(data.mensualActual)}</div>
@@ -158,7 +160,7 @@ export function RendimientoAnualChart({
                         <Bar
                             yAxisId="left"
                             dataKey="mensualActual"
-                            name={`Venta ${meta?.anoActual}`}
+                            name={`${entityType} ${meta?.anoActual}`}
                             fill="#3b82f6"
                             radius={[4, 4, 0, 0]}
                             barSize={30}
@@ -191,6 +193,6 @@ export function RendimientoAnualChart({
                     </ComposedChart>
                 </ResponsiveContainer>
             </div>
-        </div>
+        </div >
     );
 }

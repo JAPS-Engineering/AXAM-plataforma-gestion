@@ -500,7 +500,7 @@ async function getVentasTendencias(req, res) {
                 UNION ALL
                 SELECT producto_id, ${mesActualObj.ano} as ano, ${mesActualObj.mes} as mes, vendedor, cantidad_vendida, monto_neto 
                 FROM ventas_actuales 
-                FROM ventas_actuales 
+
                 -- WHERE monto_neto > 0 (Standardizing to Net Sales)
             )
         `;

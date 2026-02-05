@@ -19,6 +19,7 @@ interface TendenciasChartProps {
     metric: "money" | "quantity";
     onMetricChange: (metric: "money" | "quantity") => void;
     title?: string;
+    detailModalTitle?: string;
 }
 
 
@@ -34,7 +35,8 @@ export function TendenciasChart({
     loading,
     metric,
     onMetricChange,
-    title = "Ventas Mensuales por Familia"
+    title = "Ventas Mensuales por Familia",
+    detailModalTitle = "Detalle de Ventas"
 }: TendenciasChartProps) {
     const [showFilterDropdown, setShowFilterDropdown] = useState(false);
     const [showDetailModal, setShowDetailModal] = useState(false);
@@ -365,7 +367,7 @@ export function TendenciasChart({
                         <div className="bg-slate-50 px-6 py-4 border-b border-slate-100">
                             <div className="flex items-center justify-between mb-4">
                                 <div>
-                                    <h3 className="text-lg font-bold text-slate-900">Detalle de Ventas</h3>
+                                    <h3 className="text-lg font-bold text-slate-900">{detailModalTitle}</h3>
                                     <p className="text-xs text-slate-500">Selecciona un mes para ver el desglose</p>
                                 </div>
                                 <button

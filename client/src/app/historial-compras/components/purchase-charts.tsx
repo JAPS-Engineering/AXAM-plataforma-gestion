@@ -267,6 +267,7 @@ export function PurchaseCharts({ startDate, endDate, origen }: PurchaseChartsPro
 
                 <RankingFamiliasChart
                     title="Ranking de Gasto por Familia"
+                    subtitle="Gastos acumulados del periodo seleccionado"
                     data={finalRanking}
                     year={chartData.meta.anoActual}
                     loading={isLoading}
@@ -284,6 +285,7 @@ export function PurchaseCharts({ startDate, endDate, origen }: PurchaseChartsPro
                 loading={isLoading}
                 onYearRefChange={setYearRef}
                 onYearCompChange={setYearComp}
+                entityType="Gasto"
             />
 
             {/* Seccion 3: Tendencias */}
@@ -301,6 +303,7 @@ export function PurchaseCharts({ startDate, endDate, origen }: PurchaseChartsPro
                     loading={isLoading}
                     metric={tendenciasMetric}
                     onMetricChange={setTendenciasMetric}
+                    detailModalTitle="Detalle de Gastos"
                 />
 
                 <TendenciasTable
