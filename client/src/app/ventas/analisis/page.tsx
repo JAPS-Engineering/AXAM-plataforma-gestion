@@ -111,7 +111,7 @@ export default function AnalisisVentasPage() {
 
         // Unified sales filter logic
         if (salesStatus === 'with_sales') {
-            result = result.filter((p) => (p.totalMonto || 0) > 0);
+            result = result.filter((p) => (p.totalMonto || 0) !== 0);
         } else if (salesStatus === 'without_sales') {
             result = result.filter((p) => (p.totalMonto || 0) === 0);
         }

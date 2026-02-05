@@ -78,7 +78,7 @@ router.get('/', async (req, res) => {
                 p.sku,
                 p.descripcion,
                 p.familia,
-                p.proveedor,
+                COALESCE(NULLIF(p.proveedor, ''), p.familia) as proveedor,
                 p.precio_ultima_compra as costo,
                 pl.precio_89,
                 pl.precio_652,

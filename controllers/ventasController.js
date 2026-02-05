@@ -23,12 +23,8 @@ const prisma = getPrismaClient();
 async function getVentasDashboard(req, res) {
     try {
         const { meses = 3, marca } = req.query;
-        // Reutilizamos la logica de parsing para ser consistentes, aunque este endpoint no fue el foco del cambio
-        // pero mejora la consistencia.
         const { startYear, startMonth, endYear, endMonth, monthsArray } = parseDateParams(req.query);
 
-        // Date Filter for Prisma
-        // Complex OR logic for ranges
         const dateFilterSql = {
             AND: [
                 { OR: [{ ano: { gt: startYear } }, { ano: startYear, mes: { gte: startMonth } }] },
@@ -47,12 +43,13 @@ async function getVentasDashboard(req, res) {
             orderBy: { sku: 'asc' }
         });
 
+        const mesActualObj = getMesActual(); // { ano: 2026, mes: 2 }
+
         let totalMontoGlobal = 0;
         const rows = productosDB.map(producto => {
             const ventasHistoricas = producto.ventasHistoricas || [];
-            const ventaActualDB = producto.ventasActuales?.[0] || null; // Ojo: ventaActuales podría estar fuera del rango historico si el rango es custom pasado?
-            // En este modelo, ventasActuales es una tabla separada que siempre tiene el "mes en curso".
 
+            // Agrupar históricas
             const ventasPorMes = {};
             for (const venta of ventasHistoricas) {
                 const key = `${venta.ano}-${venta.mes}`;
@@ -63,8 +60,27 @@ async function getVentasDashboard(req, res) {
                 ventasPorMes[key].montoNeto += (venta.montoNeto || 0);
             }
 
+            // Datos actuales (si existen)
+            // Asumimos que ventaActuales contiene lo del "Mes en curso" del sistema
+            const ventaActualItems = producto.ventasActuales || [];
+            const montoActual = ventaActualItems.reduce((sum, v) => sum + (v.montoNeto || 0), 0);
+            const cantidadActual = ventaActualItems.reduce((sum, v) => sum + (v.cantidadVendida || 0), 0);
+            const stockActual = ventaActualItems[0]?.stockActual || 0;
+
             const ventasMeses = monthsArray.map(m => {
-                const data = ventasPorMes[`${m.ano}-${m.mes}`] || { cantidad: 0, montoNeto: 0 };
+                let data = ventasPorMes[`${m.ano}-${m.mes}`] || { cantidad: 0, montoNeto: 0 };
+
+                // Si el mes iterado coincide con el Mes Actual del sistema, sumamos lo de VentaActual
+                // Esto permite que aparezca en la tabla/grafico
+                if (m.ano === mesActualObj.ano && m.mes === mesActualObj.mes) {
+                    // Nota: Sumamos. En teoría VentaHistorica no debería tener datos del mes en curso si VentaActual está activa,
+                    // pero si hubiera algo parcial, lo sumamos.
+                    data = {
+                        cantidad: data.cantidad + cantidadActual,
+                        montoNeto: data.montoNeto + montoActual
+                    };
+                }
+
                 return { ano: m.ano, mes: m.mes, label: m.label, cantidad: data.cantidad, montoNeto: data.montoNeto };
             });
 
@@ -80,21 +96,22 @@ async function getVentasDashboard(req, res) {
                     familia: producto.familia,
                     precioUltimaCompra: producto.precioUltimaCompra
                 },
-                ventasMeses, totalMonto, totalCantidad,
-                promedioMonto: parseFloat((totalMonto / ventasMeses.length).toFixed(0)),
-                promedioCantidad: parseFloat((totalCantidad / ventasMeses.length).toFixed(2)),
+                ventasMeses,
+                totalMonto,
+                totalCantidad,
+                promedioMonto: ventasMeses.length > 0 ? parseFloat((totalMonto / ventasMeses.length).toFixed(0)) : 0,
+                promedioCantidad: ventasMeses.length > 0 ? parseFloat((totalCantidad / ventasMeses.length).toFixed(2)) : 0,
+                // "mesActual" sigue siendo el último dato disponible para KPIs rápidos
                 mesActual: {
                     ano: endYear,
                     mes: endMonth,
-                    montoVendido: producto.ventasActuales?.reduce((sum, v) => sum + (v.montoNeto || 0), 0) || 0,
-                    cantidadVendida: producto.ventasActuales?.reduce((sum, v) => sum + (v.cantidadVendida || 0), 0) || 0,
-                    stockActual: producto.ventasActuales?.[0]?.stockActual || 0 // Stock suele ser el mismo por producto
+                    montoVendido: montoActual,
+                    cantidadVendida: cantidadActual,
+                    stockActual: stockActual
                 }
             };
         });
 
-        // const rowsConVentas = rows.filter(r => r.totalMonto > 0);
-        // Retornamos todos los productos para que el frontend maneje el filtrado (con/sin ventas)
         const rowsFinal = rows;
 
         res.json({
@@ -105,7 +122,7 @@ async function getVentasDashboard(req, res) {
                 columnas: monthsArray.map(m => m.label),
                 totalProductos: rowsFinal.length,
                 totalMontoPeriodo: totalMontoGlobal,
-                promedioMontoPeriodo: parseFloat((totalMontoGlobal / monthsArray.length).toFixed(0)),
+                promedioMontoPeriodo: monthsArray.length > 0 ? parseFloat((totalMontoGlobal / monthsArray.length).toFixed(0)) : 0,
                 generadoEn: new Date().toISOString()
             },
             productos: rowsFinal
@@ -121,14 +138,13 @@ async function getVentasResumen(req, res) {
     try {
         const { marca } = req.query;
         const { startYear, startMonth, endYear, endMonth, monthsCount, monthsArray } = parseDateParams(req.query);
+        const mesActualObj = getMesActual(); // { ano, mes }
 
         const baseDateClause = [
             { OR: [{ ano: { gt: startYear } }, { ano: startYear, mes: { gte: startMonth } }] },
             { OR: [{ ano: { lt: endYear } }, { ano: endYear, mes: { lte: endMonth } }] }
         ];
 
-        // Filtro para VentaHistorica (incluye TODOS los meses en el rango, incluyendo el actual)
-        // NOTA: VentaActual ya no se usa después de los cambios de sincronización
         const filterHistorico = {
             AND: [...baseDateClause]
         };
@@ -139,49 +155,149 @@ async function getVentasResumen(req, res) {
             });
         }
 
-        // 1. Obtener Ventas Históricas (Agregado por mes) - Incluye mes actual
-        const ventasPorMes = await prisma.ventaHistorica.groupBy({
+        // 1. Obtener Ventas Históricas
+        const ventasPorMesHistoricas = await prisma.ventaHistorica.groupBy({
             by: ['ano', 'mes'],
             _sum: { montoNeto: true, cantidadVendida: true },
             where: filterHistorico,
             orderBy: [{ ano: 'asc' }, { mes: 'asc' }]
         });
 
-        // 2. Top Productos (siempre desde VentaHistorica)
-        const topProductos = await prisma.ventaHistorica.groupBy({
-            by: ['productoId'],
-            _sum: { montoNeto: true, cantidadVendida: true },
-            where: filterHistorico,
-            orderBy: { _sum: { montoNeto: 'desc' } },
-            take: 10
+        // 2. Obtener Ventas Actuales (Solo si el rango incluye el mes actual)
+        let ventasActualesTotal = { monto: 0, cantidad: 0 };
+        let incluirActual = false;
+
+        // Check if current month is inside range
+        const startInt = startYear * 100 + startMonth;
+        const endInt = endYear * 100 + endMonth;
+        const currentInt = mesActualObj.ano * 100 + mesActualObj.mes;
+
+        if (currentInt >= startInt && currentInt <= endInt) {
+            incluirActual = true;
+            const whereActual = {
+                // Standardizing to Net Sales (Inc. Returns)
+                // montoNeto: { gt: 0 } 
+            };
+            if (marca) {
+                whereActual.producto = { sku: { startsWith: marca.toUpperCase() } };
+            }
+
+            const aggActual = await prisma.ventaActual.aggregate({
+                _sum: { montoNeto: true, cantidadVendida: true },
+                where: whereActual
+            });
+
+            ventasActualesTotal.monto = aggActual._sum.montoNeto || 0;
+            ventasActualesTotal.cantidad = aggActual._sum.cantidadVendida || 0;
+        }
+
+        // 3. Merge Mensual
+        // Mapa temporal para sumar
+        const mapMensual = {};
+        ventasPorMesHistoricas.forEach(v => {
+            const k = `${v.ano}-${v.mes}`;
+            mapMensual[k] = {
+                monto: v._sum.montoNeto || 0,
+                cantidad: v._sum.cantidadVendida || 0
+            };
         });
 
-        const productosInfo = await prisma.producto.findMany({
-            where: { id: { in: topProductos.map(p => p.productoId) } },
-            select: { id: true, sku: true, descripcion: true }
-        });
+        if (incluirActual) {
+            const kActual = `${mesActualObj.ano}-${mesActualObj.mes}`;
+            if (!mapMensual[kActual]) mapMensual[kActual] = { monto: 0, cantidad: 0 };
 
-        const productosMap = new Map(productosInfo.map(p => [p.id, p]));
+            // Sumar lo actual a lo histórico de ese mes (si hubiera)
+            mapMensual[kActual].monto += ventasActualesTotal.monto;
+            mapMensual[kActual].cantidad += ventasActualesTotal.cantidad;
+        }
 
-        const topProductosFormateado = topProductos.map(item => ({
-            producto: productosMap.get(item.productoId) || { sku: 'N/A', descripcion: 'N/A' },
-            totalMonto: item._sum.montoNeto || 0,
-            totalCantidad: item._sum.cantidadVendida || 0
-        }));
-
-        const totalMonto = ventasPorMes.reduce((sum, v) => sum + (v._sum.montoNeto || 0), 0);
-        const promedioMensual = totalMonto / monthsCount;
-
+        // Construir array final
         const ventasMensuales = monthsArray.map(m => {
-            const found = ventasPorMes.find(v => v.ano === m.ano && v.mes === m.mes);
+            const data = mapMensual[`${m.ano}-${m.mes}`] || { monto: 0, cantidad: 0 };
             return {
                 label: m.label,
                 ano: m.ano,
                 mes: m.mes,
-                montoNeto: found?._sum.montoNeto || 0,
-                cantidad: found?._sum.cantidadVendida || 0
+                montoNeto: data.monto,
+                cantidad: data.cantidad
             };
         });
+
+        // 4. Calcular Top Productos (Historico + Actual)
+        // Como groupBy no deja unirse fácil, hacemos:
+        // - Top N histórico
+        // - Top N actual
+        // - Merge manual y re-sort
+
+        // Histórico
+        const topHist = await prisma.ventaHistorica.groupBy({
+            by: ['productoId'],
+            _sum: { montoNeto: true, cantidadVendida: true },
+            where: filterHistorico,
+            orderBy: { _sum: { montoNeto: 'desc' } },
+            take: 20 // Traemos más para dar margen al merge
+        });
+
+        // Actual
+        let topAct = [];
+        if (incluirActual) {
+            const whereActual = {
+                // Standardizing to Net Sales (Inc. Returns)
+                // montoNeto: { gt: 0 } 
+            };
+            if (marca) whereActual.producto = { sku: { startsWith: marca.toUpperCase() } };
+
+            topAct = await prisma.ventaActual.findMany({
+                where: whereActual,
+                select: { productoId: true, montoNeto: true, cantidadVendida: true },
+                orderBy: { montoNeto: 'desc' },
+                take: 20
+            });
+        }
+
+        // Merge Top List
+        const productStats = new Map();
+
+        // Agregar históricos
+        topHist.forEach(item => {
+            const pid = item.productoId;
+            if (!productStats.has(pid)) productStats.set(pid, { monto: 0, cantidad: 0 });
+            const s = productStats.get(pid);
+            s.monto += (item._sum.montoNeto || 0);
+            s.cantidad += (item._sum.cantidadVendida || 0);
+        });
+
+        // Agregar actuales
+        topAct.forEach(item => {
+            const pid = item.productoId;
+            if (!productStats.has(pid)) productStats.set(pid, { monto: 0, cantidad: 0 });
+            const s = productStats.get(pid);
+            s.monto += (item.montoNeto || 0);
+            s.cantidad += (item.cantidadVendida || 0);
+        });
+
+        // Convertir a array y sortear
+        const mergedTop = Array.from(productStats.entries())
+            .map(([pid, stats]) => ({ productoId: pid, ...stats }))
+            .sort((a, b) => b.monto - a.monto)
+            .slice(0, 10);
+
+        // Fetch product details
+        const productosInfo = await prisma.producto.findMany({
+            where: { id: { in: mergedTop.map(p => p.productoId) } },
+            select: { id: true, sku: true, descripcion: true }
+        });
+        const productosMap = new Map(productosInfo.map(p => [p.id, p]));
+
+        const topProductosFormateado = mergedTop.map(item => ({
+            producto: productosMap.get(item.productoId) || { sku: 'N/A', descripcion: 'N/A' },
+            totalMonto: item.monto,
+            totalCantidad: item.cantidad
+        }));
+
+        // KPIs Globales
+        const totalMonto = ventasMensuales.reduce((sum, v) => sum + v.montoNeto, 0);
+        const promedioMensual = monthsCount > 0 ? totalMonto / monthsCount : 0;
 
         const ultimoMes = ventasMensuales[ventasMensuales.length - 1];
         const crecimiento = promedioMensual > 0
@@ -239,10 +355,24 @@ async function getGraficosAvanzados(req, res) {
             dateFilterSql += ` AND p.sku LIKE '${marca.toUpperCase()}%' `;
         }
 
+        // UNION Subquery to treat ventas_actuales as just another month (the current one)
+        // Note: We use the *System* current date for ventas_actuales, regardless of the filter params. 
+        // The dateFilterSql will filter it out if it's not in the requested range.
+        const ventasTableSql = `
+            (
+                SELECT producto_id, ano, mes, vendedor, cantidad_vendida, monto_neto 
+                FROM ventas_mensuales
+                UNION ALL
+                SELECT producto_id, ${mesActualObj.ano} as ano, ${mesActualObj.mes} as mes, vendedor, cantidad_vendida, monto_neto 
+                FROM ventas_actuales 
+                -- WHERE monto_neto > 0 (Standardizing to Net Sales)
+            )
+        `;
+
         // 1. Ventas por Familia (Filtrado)
         const ventasPorFamiliaResult = await prisma.$queryRawUnsafe(`
             SELECT p.familia, SUM(v.monto_neto) as totalMonto, SUM(v.cantidad_vendida) as totalCantidad
-            FROM ventas_mensuales v
+            FROM ${ventasTableSql} v
             JOIN productos p ON v.producto_id = p.id
             WHERE 1=1 ${dateFilterSql}
             GROUP BY p.familia
@@ -254,7 +384,7 @@ async function getGraficosAvanzados(req, res) {
             SELECT 
                 CASE WHEN p.familia IS NULL OR p.familia = '' THEN 'Sin Familia' ELSE p.familia END as name, 
                 SUM(v.monto_neto) as value
-            FROM ventas_mensuales v
+            FROM ${ventasTableSql} v
             JOIN productos p ON v.producto_id = p.id
             WHERE 1=1 ${dateFilterSql}
             GROUP BY name
@@ -266,7 +396,7 @@ async function getGraficosAvanzados(req, res) {
             SELECT 
                 COALESCE(NULLIF(ven.nombre, ''), v.vendedor) as name, 
                 SUM(v.monto_neto) as value
-            FROM ventas_mensuales v
+            FROM ${ventasTableSql} v
             LEFT JOIN vendedores ven ON v.vendedor = ven.codigo
             JOIN productos p ON v.producto_id = p.id
             WHERE 1=1 ${dateFilterSql}
@@ -276,13 +406,14 @@ async function getGraficosAvanzados(req, res) {
         `);
 
         // 4. Rendimiento Anual (COMPARATIVA CUSTOM O DEFAULT)
-        const rendimientoAnualResult = await prisma.$queryRaw`
+        // Note: This query uses specific years (anoActual, anoAnterior) instead of the general range
+        const rendimientoAnualResult = await prisma.$queryRawUnsafe(`
             SELECT ano, mes, SUM(monto_neto) as totalMonto
-            FROM ventas_mensuales v
+            FROM ${ventasTableSql} v
             WHERE ano IN (${anoActual}, ${anoAnterior})
             GROUP BY ano, mes
             ORDER BY ano ASC, mes ASC
-        `;
+        `);
 
         const formatBigInt = (items) => items.map(item => {
             const newItem = { ...item };
@@ -346,8 +477,9 @@ async function getVentasTendencias(req, res) {
         const { marca } = req.query;
         const { startYear, startMonth, endYear, endMonth, monthsCount, monthsArray } = parseDateParams(req.query);
 
-        // 1. VentaHistorica - incluye TODOS los meses en el rango (incluyendo el actual)
-        // NOTA: VentaActual ya no se usa después de los cambios de sincronización
+        const mesActualObj = getMesActual(); // System current date
+
+        // 1. VentaHistorica - incluye TODOS los meses en el rango
         let dateFilterSql = `
             AND (
                 (v.ano > ${startYear} OR (v.ano = ${startYear} AND v.mes >= ${startMonth}))
@@ -360,13 +492,26 @@ async function getVentasTendencias(req, res) {
             dateFilterSql += ` AND p.sku LIKE '${marca.toUpperCase()}%' `;
         }
 
+        // UNION Subquery strategy
+        const ventasTableSql = `
+            (
+                SELECT producto_id, ano, mes, vendedor, cantidad_vendida, monto_neto 
+                FROM ventas_mensuales
+                UNION ALL
+                SELECT producto_id, ${mesActualObj.ano} as ano, ${mesActualObj.mes} as mes, vendedor, cantidad_vendida, monto_neto 
+                FROM ventas_actuales 
+                FROM ventas_actuales 
+                -- WHERE monto_neto > 0 (Standardizing to Net Sales)
+            )
+        `;
+
         const tendenciasResult = await prisma.$queryRawUnsafe(`
             SELECT 
                 v.ano, v.mes,
                 CASE WHEN p.familia IS NULL OR p.familia = '' THEN 'Sin Familia' ELSE p.familia END as familia,
                 SUM(v.monto_neto) as totalMonto,
                 SUM(v.cantidad_vendida) as totalCantidad
-            FROM ventas_mensuales v
+            FROM ${ventasTableSql} v
             JOIN productos p ON v.producto_id = p.id
             WHERE 1=1 ${dateFilterSql}
             GROUP BY v.ano, v.mes, familia
@@ -380,7 +525,7 @@ async function getVentasTendencias(req, res) {
             totalCantidad: Number(item.totalCantidad || 0)
         }));
 
-        // 2. Mapeo de Vendedores (Para que el frontend reciba nombres reales si los necesita en el futuro)
+        // 2. Mapeo de Vendedores
         const vendedoresInfo = await prisma.vendedor.findMany({ where: { activo: true } });
         const nicknameMap = new Map(vendedoresInfo.map(v => [v.codigo, v.nombre || v.codigo]));
 
