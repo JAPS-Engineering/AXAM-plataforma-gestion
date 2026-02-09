@@ -23,6 +23,7 @@ export interface ProductoInfo {
     dv?: string | null;
     costo?: number | null;
     factorEmpaque?: number;
+    unidad?: string;
 }
 
 export interface MesVenta {

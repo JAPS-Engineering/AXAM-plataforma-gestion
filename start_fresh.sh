@@ -18,12 +18,14 @@ docker-compose down 2>/dev/null || true
 echo "🧹 [2/6] Limpiando base de datos y migraciones antiguas..."
 rm -rf data/*
 rm -rf prisma/migrations/*
+rm -rf prisma/data/*
+mkdir -p data
 
 # ============================================
-# Paso 3: Generar migración y crear BD
+# Paso 3: Crear BD con Prisma (sin migraciones)
 # ============================================
-echo "🛠️  [3/6] Generando migración inicial y creando BD..."
-docker-compose run --rm --entrypoint "npx prisma migrate dev --name init_fresh" axam-dashboard
+echo "🛠️  [3/6] Creando base de datos con Prisma..."
+docker-compose run --rm --entrypoint "npx prisma db push --force-reset --accept-data-loss" axam-dashboard
 
 echo "🔓 Ajustando permisos de la base de datos..."
 sudo chmod -R 777 data/
@@ -35,7 +37,8 @@ echo "🧹 Limpiando recursos de red..."
 docker-compose down
 
 echo "🏗️  [4/6] Construyendo y levantando servicios..."
-docker-compose up -d --build
+docker-compose build --no-cache
+docker-compose up -d
 
 # Esperar a que el servidor esté listo
 echo "⏳ Esperando a que el servidor esté listo..."

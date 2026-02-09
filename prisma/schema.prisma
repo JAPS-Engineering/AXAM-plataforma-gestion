@@ -22,6 +22,7 @@ model Producto {
   factorEmpaque   Float    @default(1)   @map("factor_empaque") // Unidades por pallet/caja
   diasImportacion Int      @default(0)   @map("dias_importacion") // Tiempo de llegada (importados)
   origen          String   @default("NACIONAL")   // 'NACIONAL' o 'IMPORTADO'
+  unidad          String   @default("U")          // Unidad de medida (U, gr, kg, etc.)
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 

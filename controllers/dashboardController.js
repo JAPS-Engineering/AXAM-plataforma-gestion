@@ -303,7 +303,8 @@ async function getDashboard(req, res) {
                     stockOptimo: producto.stockOptimo,
                     dv: producto.dv,
                     costo: producto.precioUltimaCompra,
-                    factorEmpaque: producto.factorEmpaque
+                    factorEmpaque: producto.factorEmpaque,
+                    unidad: producto.unidad
                 },
                 ventasMeses: dataPoints, // Frontend lo renderizará igual
                 promedio: parseFloat(promedio.toFixed(2)),

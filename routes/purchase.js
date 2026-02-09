@@ -273,8 +273,71 @@ router.get('/integration-status', (req, res) => {
 });
 
 /**
+ * POST /api/purchase/manager/oc
+ * Crea una orden de compra NACIONAL en Manager+
+ */
+router.post('/manager/oc', async (req, res) => {
+    try {
+        const { proveedor, items, observaciones, fechaEntrega } = req.body;
+
+        if (!proveedor || !items || items.length === 0) {
+            return res.status(400).json({ error: 'Faltan datos requeridos (proveedor, items)' });
+        }
+
+        const result = await createPurchaseOrder({
+            proveedor,
+            items,
+            observaciones,
+            fechaEntrega
+        });
+
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        logError(`Error en POST /api/purchase/manager/oc: ${error.message}`);
+        res.status(500).json({ error: 'Error interno al crear OC', message: error.message });
+    }
+});
+
+/**
+ * POST /api/purchase/manager/oci
+ * Crea una orden de compra IMPORTACIÓN en Manager+
+ */
+router.post('/manager/oci', async (req, res) => {
+    try {
+        const { proveedor, items, moneda, tipoCambio, observaciones, fechaEmbarque, diasImportacion } = req.body;
+
+        if (!proveedor || !items || items.length === 0) {
+            return res.status(400).json({ error: 'Faltan datos requeridos' });
+        }
+
+        const result = await createImportOrder({
+            proveedor,
+            items,
+            moneda,
+            tipoCambio,
+            observaciones,
+            fechaEmbarque,
+            diasImportacion
+        });
+
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        logError(`Error en POST /api/purchase/manager/oci: ${error.message}`);
+        res.status(500).json({ error: 'Error interno al crear OCI', message: error.message });
+    }
+});
+
+/**
  * POST /api/purchase/send-to-erp
- * Envía orden a Manager+ (DESACTIVADO)
+ * Envía orden a Manager+ (DESACTIVADO - Legacy)
  */
 router.post('/send-to-erp', async (req, res) => {
     try {

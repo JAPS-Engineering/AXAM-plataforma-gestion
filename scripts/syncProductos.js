@@ -3,13 +3,18 @@
  * 
  * Obtiene todos los productos de Manager+ y los guarda en la base de datos
  * Filtrando por listas de precios (89, 652, 386) y guardando sus precios.
+ * 
+ * NOTA: Este script usa Prisma para todas las operaciones de base de datos
+ * OPTIMIZADO: Usa transacciones batch para evitar timeouts
  */
 
 require('dotenv').config();
 const axios = require('axios');
 const { getAuthHeaders } = require('../utils/auth');
-const { getDatabase, closeDatabase } = require('../utils/database');
+const { getPrismaClient } = require('../prisma/client');
 const { logSection, logSuccess, logError, logWarning, logInfo, logProgress } = require('../utils/logger');
+
+const prisma = getPrismaClient();
 
 const RUT_EMPRESA = process.env.RUT_EMPRESA;
 const ERP_BASE_URL = process.env.ERP_BASE_URL;
@@ -45,9 +50,6 @@ async function getAllProducts() {
     } catch (error) {
         const msg = (error.response && error.response.data && error.response.data.message) || error.message;
         logError(`Error al obtener productos: ${msg}`);
-        if (error.response && error.response.data) {
-            console.error('Detalles:', JSON.stringify(error.response.data, null, 2));
-        }
         throw error;
     }
 }
@@ -80,66 +82,19 @@ function extractProductInfo(product) {
         product.cod_proveedor ||
         '';
 
+    const unidad = product.unidadstock ||
+        product.unidad ||
+        product.unidad_medida ||
+        product.uom ||
+        'U';
+
     return {
         sku: sku.trim(),
         descripcion: descripcion.trim(),
         familia: familia.trim(),
-        proveedor: proveedor.trim()
+        proveedor: proveedor.trim(),
+        unidad: unidad.toString().trim()
     };
-}
-
-/**
- * Guardar o actualizar producto en la base de datos y sus precios
- */
-function saveProductWithPrices(db, sku, descripcion, familia, proveedor, prices) {
-    if (!sku || !descripcion) {
-        return false;
-    }
-
-    try {
-        const transaction = db.transaction(() => {
-            // 1. Guardar/Actualizar Producto
-            const update = db.prepare(`
-                UPDATE productos 
-                SET descripcion = ?, familia = ?, proveedor = ?, updated_at = CURRENT_TIMESTAMP 
-                WHERE sku = ?
-            `);
-            let result = update.run(descripcion, familia, proveedor, sku);
-
-            let productId;
-            if (result.changes === 0) {
-                const insert = db.prepare(`
-                    INSERT INTO productos (sku, descripcion, familia, proveedor, updated_at) 
-                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-                `);
-                const info = insert.run(sku, descripcion, familia, proveedor);
-                productId = info.lastInsertRowid;
-            } else {
-                const row = db.prepare('SELECT id FROM productos WHERE sku = ?').get(sku);
-                productId = row.id;
-            }
-
-            // 2. Guardar Precios
-            const insertPrice = db.prepare(`
-                INSERT INTO precios_listas (producto_id, lista_id, precio_neto, updated_at)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(producto_id, lista_id) DO UPDATE SET
-                precio_neto = excluded.precio_neto,
-                updated_at = CURRENT_TIMESTAMP
-            `);
-
-            for (const [listId, price] of Object.entries(prices)) {
-                insertPrice.run(productId, parseInt(listId), price);
-            }
-
-            return result.changes === 0; // True si es nuevo
-        });
-
-        return transaction();
-    } catch (error) {
-        logError(`Error al guardar producto ${sku}: ${error.message}`);
-        return false;
-    }
 }
 
 /**
@@ -149,16 +104,14 @@ async function getPriceListsData() {
     try {
         logInfo(`Obteniendo Listas de Precios (${TARGET_LISTS.join(', ')})...`);
         const headers = await getAuthHeaders();
-        // Usamos dets=1 para obtener productos
         const url = `${ERP_BASE_URL}/pricelist/${RUT_EMPRESA}/?dets=1`;
 
         const response = await axios.get(url, { headers });
         const data = response.data.data || response.data || [];
 
-        const skuData = new Map(); // SKU -> { prices: { listId: price } }
+        const skuData = new Map();
 
         for (const listId of TARGET_LISTS) {
-            // Buscar la lista exacta
             const targetList = data.find(l =>
                 String(l.codigo) === listId ||
                 String(l.id) === listId ||
@@ -189,7 +142,7 @@ async function getPriceListsData() {
             });
         }
 
-        logSuccess(`✅ Listas procesadas. ${skuData.size} SKUs únicos encontrados con precio.`);
+        logSuccess(`✅ Listas obtenidas. Total SKUs permitidos: ${skuData.size}`);
         return skuData;
 
     } catch (error) {
@@ -199,24 +152,21 @@ async function getPriceListsData() {
 }
 
 /**
- * Función principal
+ * Función principal - OPTIMIZADA con batch operations
  */
 async function main() {
     logSection('SINCRONIZACIÓN DE PRODUCTOS Y PRECIOS');
-
-    const db = getDatabase();
 
     try {
         // 1. Obtener Datos de Listas de Precios (Whitelist + Precios)
         const whiteListMap = await getPriceListsData();
 
         if (whiteListMap.size === 0) {
-            logError('No se obtuvieron SKUs de las listas de precios. Abortando para evitar borrado masivo.');
+            logError('No se obtuvieron SKUs de las listas de precios. Abortando.');
             return;
         }
 
         // 2. Obtener TODA la base de productos de Manager+
-        // (Necesario para obtener Familia, Proveedor, etc., que no vienen en la lista de precios)
         const allProducts = await getAllProducts();
         logInfo(`Total productos en ERP: ${allProducts.length}`);
 
@@ -225,126 +175,133 @@ async function main() {
             return;
         }
 
-        // 3. Filtrar y Procesar
-        logInfo('Filtrando y procesando productos...\n');
+        // 3. Obtener productos existentes en DB para comparar
+        const existingProducts = await prisma.producto.findMany({
+            select: { id: true, sku: true }
+        });
+        const existingMap = new Map(existingProducts.map(p => [p.sku, p.id]));
+        logInfo(`Productos en DB local: ${existingProducts.length}`);
 
-        let nuevos = 0;
-        let actualizados = 0;
-        let omitidos = 0;
-        let filtrados = 0;
-        const familiasFound = new Map();
-
-        // Crear Set de SKUs para búsqueda rápida
+        // 4. Preparar datos para batch operations
         const whiteListSKUs = new Set(whiteListMap.keys());
+        const productsToCreate = [];
+        const productsToUpdate = [];
+        const pricesData = new Map(); // sku -> prices
 
-        for (let i = 0; i < allProducts.length; i++) {
-            const product = allProducts[i];
-            const { sku, descripcion, familia, proveedor } = extractProductInfo(product);
+        for (const product of allProducts) {
+            const { sku, descripcion, familia, proveedor, unidad } = extractProductInfo(product);
 
-            if (!sku || !descripcion) {
-                omitidos++;
-                continue;
-            }
+            if (!sku || !descripcion) continue;
+            if (!whiteListSKUs.has(sku)) continue;
 
-            // Contar familias encontradas en el ERP (solo para log)
-            if (familia) {
-                familiasFound.set(familia, (familiasFound.get(familia) || 0) + 1);
-            }
-
-            // CHECK WHITE LIST (Estar en AL MENOS UNA DE LAS LISTAS)
-            if (!whiteListSKUs.has(sku)) {
-                filtrados++;
-                continue;
-            }
-
-            // Obtener precios capturados previamente
             const prices = whiteListMap.get(sku).prices;
+            pricesData.set(sku, prices);
 
-            const esNuevo = saveProductWithPrices(db, sku, descripcion, familia, proveedor, prices);
-            if (esNuevo) {
-                nuevos++;
+            if (existingMap.has(sku)) {
+                productsToUpdate.push({ sku, descripcion, familia, proveedor, unidad });
             } else {
-                actualizados++;
+                productsToCreate.push({ sku, descripcion, familia, proveedor, unidad });
             }
-
-            if (i % 50 === 0) logProgress(i + 1, allProducts.length, 'productos evaluados');
         }
 
-        console.log('\n');
-        logSection('RESUMEN');
+        logInfo(`Filtrado: ${productsToCreate.length + productsToUpdate.length} productos permitidos (de ${allProducts.length})`);
 
-        logSuccess(`Total productos procesados (en listas): ${nuevos + actualizados}`);
-        logInfo(`  - Nuevos: ${nuevos}`);
-        logInfo(`  - Actualizados: ${actualizados}`);
-        logInfo(`  - Filtrados (No están en niguna lista): ${filtrados}`);
+        // 5. Batch CREATE new products
+        if (productsToCreate.length > 0) {
+            logInfo(`Creando ${productsToCreate.length} nuevos productos...`);
 
-        // Mostrar estadísticas de la BD
-        const totalBD = db.prepare('SELECT COUNT(*) as count FROM productos').get();
-        logInfo(`Total de productos en base de datos: ${totalBD.count}`);
+            // Use createMany for bulk insert (much faster)
+            await prisma.producto.createMany({
+                data: productsToCreate,
+                skipDuplicates: true
+            });
+        }
 
-        logSuccess('\n✅ Sincronización completada con Éxito\n');
+        // 6. Batch UPDATE existing products (in chunks to avoid timeout)
+        if (productsToUpdate.length > 0) {
+            logInfo(`Actualizando ${productsToUpdate.length} productos existentes...`);
 
-        // 4. LIMPIEZA DE PRODUCTOS ANTIGUOS
+            const BATCH_SIZE = 100;
+            for (let i = 0; i < productsToUpdate.length; i += BATCH_SIZE) {
+                const batch = productsToUpdate.slice(i, i + BATCH_SIZE);
+                await prisma.$transaction(
+                    batch.map(p => prisma.producto.update({
+                        where: { sku: p.sku },
+                        data: { descripcion: p.descripcion, familia: p.familia, proveedor: p.proveedor, unidad: p.unidad }
+                    }))
+                );
+                logProgress(Math.min(i + BATCH_SIZE, productsToUpdate.length), productsToUpdate.length, 'productos actualizados');
+            }
+        }
+
+        // 7. Refresh product IDs after creation
+        const allDbProducts = await prisma.producto.findMany({ select: { id: true, sku: true } });
+        const productIdMap = new Map(allDbProducts.map(p => [p.sku, p.id]));
+
+        // 8. Batch INSERT/UPDATE prices
+        logInfo('Sincronizando precios...');
+        const allPriceData = [];
+
+        for (const [sku, prices] of pricesData) {
+            const productId = productIdMap.get(sku);
+            if (!productId) continue;
+
+            for (const [listId, price] of Object.entries(prices)) {
+                allPriceData.push({
+                    productoId: productId,
+                    listaId: parseInt(listId),
+                    precioNeto: price
+                });
+            }
+        }
+
+        // Upsert prices in batches
+        const PRICE_BATCH_SIZE = 200;
+        for (let i = 0; i < allPriceData.length; i += PRICE_BATCH_SIZE) {
+            const batch = allPriceData.slice(i, i + PRICE_BATCH_SIZE);
+            await prisma.$transaction(
+                batch.map(p => prisma.precioLista.upsert({
+                    where: { productoId_listaId: { productoId: p.productoId, listaId: p.listaId } },
+                    update: { precioNeto: p.precioNeto },
+                    create: p
+                }))
+            );
+        }
+
+        // 9. CLEANUP: Delete products not in whitelist
         logSection('LIMPIEZA DE BASE DE DATOS');
-        logInfo('Verificando productos obsoletos en la base de datos...');
-
-        // Obtener todos los SKUs de la base de datos
-        const dbProducts = db.prepare('SELECT sku FROM productos').all();
-        const dbSkus = new Set(dbProducts.map(p => p.sku));
-
-        logInfo(`Total productos en DB: ${dbSkus.size}`);
-
         const skusToDelete = [];
-        for (const sku of dbSkus) {
+        for (const [sku, id] of productIdMap) {
             if (!whiteListSKUs.has(sku)) {
                 skusToDelete.push(sku);
             }
         }
 
         if (skusToDelete.length > 0) {
-            logWarning(`⚠️  Se encontraron ${skusToDelete.length} productos en la BD que NO están en las listas permitidas.`);
-            logWarning('⏳ Eliminando productos obsoletos y su historial (Cascade)...');
-
-            const deleteStmt = db.prepare('DELETE FROM productos WHERE sku = ?');
-
-            // Ejecutar en transacción para seguridad y velocidad
-            const deleteTransaction = db.transaction((skus) => {
-                let deletedCount = 0;
-                for (const sku of skus) {
-                    deleteStmt.run(sku);
-                    deletedCount++;
-                    if (deletedCount % 100 === 0) process.stdout.write(`\rEliminando: ${deletedCount}/${skus.length}`);
-                }
-                console.log(''); // Nueva línea
-                return deletedCount;
+            logWarning(`Eliminando ${skusToDelete.length} productos obsoletos...`);
+            await prisma.producto.deleteMany({
+                where: { sku: { in: skusToDelete } }
             });
-
-            const totalDeleted = deleteTransaction(skusToDelete);
-            logSuccess(`🗑️  Eliminados ${totalDeleted} productos obsoletos correctamente.`);
+            logSuccess(`🗑️  Eliminados ${skusToDelete.length} productos obsoletos.`);
         } else {
-            logSuccess('✨ La base de datos está limpia. Todos los productos pertenecen a las listas permitidas.');
+            logSuccess('✨ Base de datos limpia.');
         }
 
-        // Mostrar estadísticas finales
-        const finalCount = db.prepare('SELECT COUNT(*) as count FROM productos').get();
-        const finalPrices = db.prepare('SELECT COUNT(*) as count FROM precios_listas').get();
-        logInfo(`Total productos finales en DB: ${finalCount.count}`);
-        logInfo(`Total precios registrados: ${finalPrices.count}`);
+        // 10. Final stats
+        const finalCount = await prisma.producto.count();
+        const finalPrices = await prisma.precioLista.count();
+        logSection('RESUMEN');
+        logSuccess(`Total productos: ${finalCount}`);
+        logInfo(`Total precios: ${finalPrices}`);
+        logSuccess('\n✅ Sincronización completada\n');
 
     } catch (error) {
         logError(`Error en la sincronización: ${error.message}`);
-        if (error.stack) {
-            console.error(error.stack);
-        }
+        if (error.stack) console.error(error.stack);
         process.exit(1);
     } finally {
-        closeDatabase();
+        await prisma.$disconnect();
     }
-}
-
-// Función renombrada para ser importable y usada por otros scripts
-async function syncProductsWithFilter() {
-    return await main();
 }
 
 // Ejecutar si se llama directamente
@@ -355,4 +312,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { main, syncProductsWithFilter };
+module.exports = { main };

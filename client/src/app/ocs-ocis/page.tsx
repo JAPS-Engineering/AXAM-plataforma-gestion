@@ -15,6 +15,8 @@ interface SummaryTableProps {
     title: string;
     items: ProductoDashboard[];
     onUpdate: (id: number, qty: number, tipo: string) => void;
+    onSendToManager: () => void; // Nueva prop
+    isSending?: boolean;
     // Sorting & Pagination props
     sortConfig: SortConfig;
     onSort: (column: SortColumn) => void;
@@ -32,7 +34,7 @@ function formatCurrency(val: number | undefined | null) {
     return "$ " + val.toLocaleString("es-CL");
 }
 
-function SummaryTable({ title, items, onUpdate, sortConfig, onSort, pagination }: SummaryTableProps) {
+function SummaryTable({ title, items, onUpdate, onSendToManager, isSending, sortConfig, onSort, pagination }: SummaryTableProps) {
     const handleSave = async (productoId: number, cantidad: number, tipo: string) => {
         await saveOrders([{ productoId, cantidad, tipo }]);
         onUpdate(productoId, cantidad, tipo);
@@ -50,6 +52,28 @@ function SummaryTable({ title, items, onUpdate, sortConfig, onSort, pagination }
                         {items.length} productos | {totalUnits.toLocaleString("es-CL")} un. | {formatCurrency(totalCLP)}
                     </div>
                 </div>
+                <button
+                    onClick={onSendToManager}
+                    disabled={isSending || items.length === 0}
+                    className={cn(
+                        "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors border",
+                        items.length > 0 && !isSending
+                            ? "bg-blue-600 text-white hover:bg-blue-700 border-transparent shadow-sm"
+                            : "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                    )}
+                >
+                    {isSending ? (
+                        <>
+                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            Enviando...
+                        </>
+                    ) : (
+                        <>
+                            <Upload className="w-4 h-4" />
+                            Enviar a Manager+
+                        </>
+                    )}
+                </button>
             </div>
 
             <div className="overflow-x-auto">
@@ -159,6 +183,8 @@ export default function OcsOcisPage() {
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState<ProductoDashboard[]>([]);
     const [lastUpdate, setLastUpdate] = useState<string>("");
+    const [sendingOC, setSendingOC] = useState(false);
+    const [sendingOCI, setSendingOCI] = useState(false);
 
     const fetchData = () => {
         setLoading(true);
@@ -317,6 +343,105 @@ export default function OcsOcisPage() {
         document.body.removeChild(link);
     };
 
+    const handleSendOC = async () => {
+        const items = data.filter(i => !i.tipoCompra || i.tipoCompra === 'OC');
+        if (items.length === 0) return;
+
+        if (!confirm(`¿Estás seguro de enviar una Orden de Compra Nacional con ${items.length} productos?`)) {
+            return;
+        }
+
+        const proveedorNombre = prompt("Ingrese nombre del proveedor (opcional):");
+        const rutProveedor = prompt("Ingrese RUT del proveedor (opcional, formato 12345678-9):", "96604460-8");
+
+        setSendingOC(true);
+        try {
+            const payload = {
+                proveedor: {
+                    nombre: proveedorNombre || "Proveedor General",
+                    rut: rutProveedor
+                },
+                items: items.map(i => ({
+                    sku: i.producto.sku,
+                    descripcion: i.producto.descripcion,
+                    cantidad: i.compraRealizar,
+                    precioUnit: i.producto.costo,
+                    unidad: i.producto.unidad // Asumiendo que viene del backend
+                })),
+                observaciones: "[PRUEBA - NO PROCESAR] Ingreso de prueba desde AXAM Dashboard - Plataforma en desarrollo"
+            };
+
+            const res = await fetch("/api/purchase/manager/oc", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await res.json();
+            if (result.success) {
+                alert(`✅ OC Creada Exitosamente!\nCódigo: ${result.data?.mensaje?.[1] || 'OK'}`);
+            } else {
+                alert(`❌ Error al crear OC:\n${result.message || JSON.stringify(result)}`);
+            }
+        } catch (error) {
+            console.error(error);
+            alert("Error de conexión al enviar OC");
+        } finally {
+            setSendingOC(false);
+        }
+    };
+
+    const handleSendOCI = async () => {
+        const items = data.filter(i => i.tipoCompra === 'OCI');
+        if (items.length === 0) return;
+
+        if (!confirm(`¿Estás seguro de enviar una Orden de Importación con ${items.length} productos?`)) {
+            return;
+        }
+
+        const proveedorNombre = prompt("Ingrese nombre del proveedor (opcional):");
+        const rutProveedor = prompt("Ingrese RUT del proveedor (opcional, formato 12345678-9):", "96604460-8");
+        const tipoCambio = prompt("Ingrese Tipo de Cambio (USD a CLP):", "950");
+
+        setSendingOCI(true);
+        try {
+            const payload = {
+                proveedor: {
+                    nombre: proveedorNombre || "Proveedor Importación",
+                    rut: rutProveedor
+                },
+                items: items.map(i => ({
+                    sku: i.producto.sku,
+                    descripcion: i.producto.descripcion,
+                    cantidad: i.compraRealizar,
+                    precioUnit: 100, // IMPORTANTE: Debería ser precio FOB real
+                    unidad: i.producto.unidad
+                })),
+                moneda: "USD",
+                tipoCambio: Number(tipoCambio) || 950,
+                observaciones: "[PRUEBA - NO PROCESAR] Ingreso de prueba desde AXAM Dashboard (Importación) - Plataforma en desarrollo"
+            };
+
+            const res = await fetch("/api/purchase/manager/oci", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await res.json();
+            if (result.success) {
+                alert(`✅ OCI Creada Exitosamente!\nCódigo: ${result.data?.mensaje?.[1] || 'OK'}`);
+            } else {
+                alert(`❌ Error al crear OCI:\n${result.message || JSON.stringify(result)}`);
+            }
+        } catch (error) {
+            console.error(error);
+            alert("Error de conexión al enviar OCI");
+        } finally {
+            setSendingOCI(false);
+        }
+    };
+
     return (
         <div className="flex h-screen bg-slate-50 overflow-hidden">
             <Sidebar />
@@ -359,9 +484,7 @@ export default function OcsOcisPage() {
                             >
                                 <FileText className="h-3.5 w-3.5" /> TXT Tork
                             </button>
-                            <button className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 text-slate-400 rounded-md cursor-not-allowed text-xs font-medium border border-slate-200" disabled>
-                                <Upload className="h-3.5 w-3.5" /> Manager
-                            </button>
+
                         </div>
                     </div>
                 </Header>
@@ -378,6 +501,8 @@ export default function OcsOcisPage() {
                                     title="Ordenes de Compra Nacional (OC)"
                                     items={ocPaged}
                                     onUpdate={handleUpdate}
+                                    onSendToManager={handleSendOC}
+                                    isSending={sendingOC}
                                     sortConfig={sortOC}
                                     onSort={handleSortOC}
                                     pagination={{
@@ -392,6 +517,8 @@ export default function OcsOcisPage() {
                                     title="Ordenes de Compra de Importación (OCI)"
                                     items={ociPaged}
                                     onUpdate={handleUpdate}
+                                    onSendToManager={handleSendOCI}
+                                    isSending={sendingOCI}
                                     sortConfig={sortOCI}
                                     onSort={handleSortOCI}
                                     pagination={{

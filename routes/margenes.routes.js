@@ -1,7 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const { getDatabase } = require('../utils/database'); // Using sqlite database directly for complex queries
+const { getPrismaClient } = require('../prisma/client');
 const { logError } = require('../utils/logger');
+
+const prisma = getPrismaClient();
 
 /**
  * GET /api/margenes
@@ -9,95 +11,78 @@ const { logError } = require('../utils/logger');
  * Filtros: fechaInicio, fechaFin (YYYY-MM), familia, proveedor, vendedor
  */
 router.get('/', async (req, res) => {
-    const db = getDatabase();
     try {
         const { fechaInicio, fechaFin, familia, proveedor, vendedor } = req.query;
 
         // Construir filtros de fecha para ventas
-        // fechaInicio y fechaFin vienen como "YYYY-MM"
-        let dateFilter = '';
-        const params = [];
+        let ventasWhere = {};
 
         if (fechaInicio && fechaFin) {
             const [yearStart, monthStart] = fechaInicio.split('-').map(Number);
             const [yearEnd, monthEnd] = fechaFin.split('-').map(Number);
 
-            // Lógica simple: (ano > startY OR (ano = startY AND mes >= startM)) AND (ano < endY OR (ano = endY AND mes <= endM))
-            // Para simplificar en SQL: ano * 100 + mes BETWEEN start AND end
-            const startVal = yearStart * 100 + monthStart;
-            const endVal = yearEnd * 100 + monthEnd;
+            ventasWhere = {
+                OR: []
+            };
 
-            dateFilter = `AND (v.ano * 100 + v.mes) BETWEEN ? AND ?`;
-            params.push(startVal, endVal);
+            // Create date range filter
+            for (let y = yearStart; y <= yearEnd; y++) {
+                const mStart = y === yearStart ? monthStart : 1;
+                const mEnd = y === yearEnd ? monthEnd : 12;
+                for (let m = mStart; m <= mEnd; m++) {
+                    ventasWhere.OR.push({ ano: y, mes: m });
+                }
+            }
         }
 
-        // Filtros adicionales
-        let productFilter = '';
-        if (familia) {
-            productFilter += ` AND p.familia = ?`;
-            params.push(familia);
-        }
-        if (proveedor) {
-            productFilter += ` AND p.proveedor = ?`;
-            params.push(proveedor);
-        }
-
-        // El filtro de vendedor se aplica a las ventas
-        let sellerFilter = '';
         if (vendedor) {
-            sellerFilter = ` AND v.vendedor = ?`;
-            params.push(vendedor);
+            ventasWhere.vendedor = vendedor;
         }
 
-        // Query Principal
-        // 1. Obtener datos básicos de productos + costos
-        // 2. Unir precios de listas (PIVOT manual)
-        // 3. Unir ventas agregadas
+        // Filtros de producto
+        let productWhere = {};
+        if (familia) productWhere.familia = familia;
+        if (proveedor) productWhere.proveedor = proveedor;
 
-        const query = `
-            WITH VentasAgg AS (
-                SELECT 
-                    producto_id,
-                    SUM(cantidad_vendida) as total_cantidad,
-                    SUM(monto_neto) as total_monto
-                FROM ventas_mensuales v
-                WHERE 1=1 ${dateFilter} ${sellerFilter}
-                GROUP BY producto_id
-            ),
-            PreciosPivot AS (
-                SELECT 
-                    producto_id,
-                    MAX(CASE WHEN lista_id = 89 THEN precio_neto END) as precio_89,
-                    MAX(CASE WHEN lista_id = 652 THEN precio_neto END) as precio_652,
-                    MAX(CASE WHEN lista_id = 386 THEN precio_neto END) as precio_386
-                FROM precios_listas
-                GROUP BY producto_id
-            )
-            SELECT 
-                p.id,
-                p.sku,
-                p.descripcion,
-                p.familia,
-                COALESCE(NULLIF(p.proveedor, ''), p.familia) as proveedor,
-                p.precio_ultima_compra as costo,
-                pl.precio_89,
-                pl.precio_652,
-                pl.precio_386,
-                COALESCE(va.total_cantidad, 0) as ventas_cantidad,
-                COALESCE(va.total_monto, 0) as ventas_monto
-            FROM productos p
-            LEFT JOIN PreciosPivot pl ON p.id = pl.producto_id
-            LEFT JOIN VentasAgg va ON p.id = va.producto_id
-            WHERE 1=1 ${productFilter}
-            -- Ordenar por ventas descendente por defecto
-            ORDER BY va.total_monto DESC
-        `;
+        // Obtener productos con ventas y precios
+        const productos = await prisma.producto.findMany({
+            where: productWhere,
+            include: {
+                ventasHistoricas: {
+                    where: Object.keys(ventasWhere).length > 0 ? ventasWhere : undefined
+                },
+                preciosListas: true
+            }
+        });
 
-        const results = db.prepare(query).all(...params);
+        // Procesar resultados
+        const results = productos.map(p => {
+            // Agregar ventas
+            const totalCantidad = p.ventasHistoricas.reduce((sum, v) => sum + v.cantidadVendida, 0);
+            const totalMonto = p.ventasHistoricas.reduce((sum, v) => sum + v.montoNeto, 0);
 
-        // Calcular márgenes en el backend o frontend? Mejor entregar datos crudos y calculados
-        // Pero para el frontend es fácil calcular.
-        // Enviamos los datos tal cual.
+            // Pivot precios
+            const precio89 = p.preciosListas.find(pl => pl.listaId === 89)?.precioNeto || null;
+            const precio652 = p.preciosListas.find(pl => pl.listaId === 652)?.precioNeto || null;
+            const precio386 = p.preciosListas.find(pl => pl.listaId === 386)?.precioNeto || null;
+
+            return {
+                id: p.id,
+                sku: p.sku,
+                descripcion: p.descripcion,
+                familia: p.familia,
+                proveedor: p.proveedor || p.familia,
+                costo: p.precioUltimaCompra,
+                precio_89: precio89,
+                precio_652: precio652,
+                precio_386: precio386,
+                ventas_cantidad: totalCantidad,
+                ventas_monto: totalMonto
+            };
+        });
+
+        // Ordenar por ventas descendente
+        results.sort((a, b) => b.ventas_monto - a.ventas_monto);
 
         res.json({
             success: true,

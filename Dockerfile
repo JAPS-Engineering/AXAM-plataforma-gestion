@@ -23,7 +23,7 @@ FROM node:20-slim AS runner
 WORKDIR /app
 
 # Instalar OpenSSL para asegurar compatibilidad con Prisma
-RUN apt-get update -y && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -y && apt-get install -y openssl ca-certificates python3 make g++ && rm -rf /var/lib/apt/lists/*
 
 # Instalar dependencias de producción para servidor
 # Instalar dependencias de producción para servidor
