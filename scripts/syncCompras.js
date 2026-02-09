@@ -108,7 +108,7 @@ async function processPurchases(products, year, month) {
 
     let processed = 0;
     let updated = 0;
-    const productsToUpdateCost = new Map(); // productId -> { precio, fecha }
+    const productsToUpdateCost = new Map(); // productId -> { precio, fecha, proveedor, rutProveedor }
 
     // Agrupar compras por producto para inserción batch
     // Agrupar compras por producto para inserción batch
@@ -156,7 +156,9 @@ async function processPurchases(products, year, month) {
             if (!existing || purchase.fecha > existing.fecha) {
                 productsToUpdateCost.set(product.id, {
                     precio: purchase.precioUnitario,
-                    fecha: purchase.fecha
+                    fecha: purchase.fecha,
+                    proveedor: purchase.proveedor,
+                    rutProveedor: purchase.rutProveedor
                 });
             }
         }
@@ -168,7 +170,9 @@ async function processPurchases(products, year, month) {
             where: { id: productId },
             data: {
                 precioUltimaCompra: data.precio,
-                fechaUltimaCompra: data.fecha
+                fechaUltimaCompra: data.fecha,
+                proveedor: data.proveedor || undefined,
+                rutProveedor: data.rutProveedor || undefined
             }
         });
         updated++;

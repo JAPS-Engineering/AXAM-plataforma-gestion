@@ -80,9 +80,15 @@ function extractProductsFromPurchase(document) {
         return products;
     }
 
+    // DEBUG: Log first document structure
+    if (Math.random() < 0.05) { // Log 5% of docs to not spam too much but see some
+        console.log("DEBUG DOCUMENT:", JSON.stringify(document, null, 2));
+    }
+
     // Extraer información del documento
-    const proveedor = document.razon_social || document.nom_proveedor || document.proveedor || '';
-    const rutProveedor = document.rut_proveedor || document.rut || '';
+    // En Manager+ para compras, a veces el proveedor viene como 'rut_cliente' o 'razon_social'
+    const proveedor = document.razon_social || document.nom_proveedor || document.proveedor || document.nombre_cliente || document.nombre || '';
+    const rutProveedor = document.rut_proveedor || document.rut || document.rut_cliente || '';
     const folio = document.folio?.toString() || document.numero?.toString() || '';
 
     // Fecha del documento

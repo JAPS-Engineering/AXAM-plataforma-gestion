@@ -561,6 +561,47 @@ async function updateLogistica(req, res) {
     }
 }
 
+/**
+ * PATCH /api/productos/:id/proveedor
+ * Actualizar proveedor de un producto (manual fallback)
+ */
+async function updateProveedor(req, res) {
+    try {
+        const { id } = req.params;
+        const { nombre, rut } = req.body;
+
+        const productoId = parseInt(id, 10);
+        if (isNaN(productoId)) {
+            return res.status(400).json({ error: 'ID de producto inválido' });
+        }
+
+        const producto = await prisma.producto.update({
+            where: { id: productoId },
+            data: {
+                proveedor: nombre,
+                rutProveedor: rut
+            }
+        });
+
+        res.json({
+            success: true,
+            producto: {
+                id: producto.id,
+                sku: producto.sku,
+                proveedor: producto.proveedor,
+                rutProveedor: producto.rutProveedor
+            }
+        });
+
+    } catch (error) {
+        logError(`Error en updateProveedor: ${error.message}`);
+        res.status(500).json({
+            error: 'Error al actualizar proveedor',
+            message: error.message
+        });
+    }
+}
+
 
 /**
  * GET /api/productos/historial-stock
@@ -629,6 +670,7 @@ module.exports = {
     getProductosMinimos,
     updateStockMinimo,
     updateLogistica,
+    updateProveedor,
     getHistorialStock
 };
 

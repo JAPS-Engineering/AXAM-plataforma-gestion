@@ -16,6 +16,7 @@ const { getChileDate } = require('../utils/timezone');
 const { getAllSales, aggregateSalesByProduct } = require('../services/salesService');
 const { syncYesterday, syncNewProducts, syncDaySales, syncCurrentMonthData } = require('../scripts/syncDaily');
 const { syncCurrentMonth: syncComprasCurrentMonth } = require('../scripts/syncCompras');
+const { syncAllProviders } = require('../services/providerService');
 const { subDays } = require('date-fns');
 const { registrarSync, getSyncLogs } = require('../services/syncLogService');
 
@@ -304,7 +305,9 @@ async function getDashboard(req, res) {
                     dv: producto.dv,
                     costo: producto.precioUltimaCompra,
                     factorEmpaque: producto.factorEmpaque,
-                    unidad: producto.unidad
+                    unidad: producto.unidad,
+                    proveedor: producto.proveedor,
+                    rutProveedor: producto.rutProveedor
                 },
                 ventasMeses: dataPoints, // Frontend lo renderizará igual
                 promedio: parseFloat(promedio.toFixed(2)),
@@ -575,6 +578,21 @@ async function syncStream(req, res) {
             sendEvent({
                 step: 'purchases_warning',
                 message: `Compras: ${comprasError.message}`
+            });
+        }
+
+        // 4. Sincronizar proveedores desde el historial
+        sendEvent({ step: 'providers', message: 'Sincronizando proveedores desde historial...' });
+        try {
+            const providerStats = await syncAllProviders();
+            sendEvent({
+                step: 'providers_done',
+                message: `${providerStats.actualizados} proveedores actualizados`
+            });
+        } catch (providerError) {
+            sendEvent({
+                step: 'providers_warning',
+                message: `Proveedores: ${providerError.message}`
             });
         }
 

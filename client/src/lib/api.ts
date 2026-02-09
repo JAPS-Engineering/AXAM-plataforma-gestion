@@ -24,6 +24,8 @@ export interface ProductoInfo {
     costo?: number | null;
     factorEmpaque?: number;
     unidad?: string;
+    proveedor?: string;
+    rutProveedor?: string;
 }
 
 export interface MesVenta {
@@ -372,6 +374,10 @@ export interface LogisticaUpdate {
 
 export async function updateLogistica(id: number, data: LogisticaUpdate): Promise<void> {
     await api.patch(`/productos/${id}/logistica`, data);
+}
+
+export async function updateProductProvider(id: number, nombre: string, rut: string): Promise<void> {
+    await api.patch(`/productos/${id}/proveedor`, { nombre, rut });
 }
 
 // === API TENDENCIAS ===

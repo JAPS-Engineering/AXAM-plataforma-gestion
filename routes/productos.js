@@ -11,6 +11,7 @@ const {
     getProductosMinimos,
     updateStockMinimo,
     updateLogistica,
+    updateProveedor,
     getHistorialStock
 } = require('../controllers/productosController');
 
@@ -34,6 +35,9 @@ router.patch('/:id/minimo', updateStockMinimo);
 
 // PATCH /api/productos/:id/logistica - Actualizar parámetros logísticos
 router.patch('/:id/logistica', updateLogistica);
+
+// PATCH /api/productos/:id/proveedor - Actualizar proveedor (manual fallback)
+router.patch('/:id/proveedor', updateProveedor);
 
 module.exports = router;
 

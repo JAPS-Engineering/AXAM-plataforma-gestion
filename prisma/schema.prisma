@@ -2,8 +2,8 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider      = "prisma-client-js"
-  binaryTargets = ["native", "debian-openssl-3.0.x", "windows"]
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "windows"]
 }
 
 datasource db {
@@ -16,7 +16,8 @@ model Producto {
   sku             String   @unique
   descripcion     String
   familia         String   @default("")
-  proveedor       String   @default("")           // Nombre/código del proveedor
+  proveedor       String   @default("")           // Nombre del proveedor
+  rutProveedor    String   @default("")   @map("rut_proveedor") // RUT del proveedor
   stockMinimo     Float?   @map("stock_minimo") // Umbral para alerta de quiebre
   stockOptimo     Float?   @map("stock_optimo") // Nivel ideal de inventario
   factorEmpaque   Float    @default(1)   @map("factor_empaque") // Unidades por pallet/caja
