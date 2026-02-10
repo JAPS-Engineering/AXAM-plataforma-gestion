@@ -145,7 +145,10 @@ async function getDashboard(req, res) {
 
         let ventasHoyMap = new Map();
 
-        if (live !== 'false') {
+        // Solo obtener ventas live del ERP en modo MENSUAL.
+        // En modo SEMANAL, los datos ya están en la DB (tabla ventasSemanales),
+        // no necesitamos llamar a la API del ERP y evitamos errores 429.
+        if (live !== 'false' && frequency !== 'WEEKLY') {
             try {
                 const docsHoy = await getAllSales(startOfToday, now);
                 ventasHoyMap = aggregateSalesByProduct(docsHoy);

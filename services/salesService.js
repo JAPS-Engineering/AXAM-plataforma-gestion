@@ -13,9 +13,46 @@ const { logInfo, logSuccess, logError, logWarning } = require('../utils/logger')
 const RUT_EMPRESA = process.env.RUT_EMPRESA;
 const ERP_BASE_URL = process.env.ERP_BASE_URL;
 
-// Tipos de documentos de venta (del código antiguo)
 // Tipos de documentos de venta
 const DOCUMENT_TYPES = ["FAVE", "BOVE", "NCVE", "GDVE"];
+
+// ==========================================
+// MUTEX: Evita que múltiples llamadas a getAllSales
+// saturen la API del ERP con peticiones concurrentes.
+// Si una llamada está en curso, las siguientes esperan.
+// ==========================================
+class Mutex {
+    constructor() {
+        this._queue = [];
+        this._locked = false;
+    }
+
+    async runExclusive(fn) {
+        // Esperar si hay otra ejecución en curso
+        await new Promise(resolve => {
+            if (!this._locked) {
+                this._locked = true;
+                resolve();
+            } else {
+                this._queue.push(resolve);
+            }
+        });
+
+        try {
+            return await fn();
+        } finally {
+            // Liberar y ejecutar la siguiente en la cola
+            if (this._queue.length > 0) {
+                const next = this._queue.shift();
+                next();
+            } else {
+                this._locked = false;
+            }
+        }
+    }
+}
+
+const erpMutex = new Mutex();
 
 /**
  * Obtener documentos de venta de un tipo específico para un rango de fechas
@@ -120,52 +157,60 @@ function isFaveRefToGuide(doc) {
  * Deduplica FAVEs que vienen de Guías.
  */
 async function getAllSales(fechaInicio, fechaFin) {
-    logInfo(`Obteniendo ventas de ${DOCUMENT_TYPES.join(', ')} del ${format(fechaInicio, 'dd/MM/yyyy')} al ${format(fechaFin, 'dd/MM/yyyy')}...`);
+    // Usar mutex para evitar que múltiples llamadas concurrentes saturen la API del ERP
+    return erpMutex.runExclusive(async () => {
+        logInfo(`Obteniendo ventas de ${DOCUMENT_TYPES.join(', ')} del ${format(fechaInicio, 'dd/MM/yyyy')} al ${format(fechaFin, 'dd/MM/yyyy')}...`);
 
-    const allDocuments = [];
-    const stats = {};
+        const allDocuments = [];
+        const stats = {};
 
-    // Obtener documentos de cada tipo en paralelo
-    const results = await Promise.all(DOCUMENT_TYPES.map(async (docType) => {
-        try {
-            const docs = await getDocumentsByType(docType, fechaInicio, fechaFin);
-            logSuccess(`  ${docType}: ${docs.length} documentos`);
-            return { type: docType, documents: docs };
-        } catch (error) {
-            logError(`  ${docType}: Error - ${error.message}`);
-            return { type: docType, documents: [], error: error.message };
-        }
-    }));
-
-    let favesSkipped = 0;
-
-    for (const result of results) {
-        stats[result.type] = result.documents.length;
-
-        for (const doc of result.documents) {
-            // Lógica de Deduplicación FAVE vs GDVE
-            if (result.type === 'FAVE') {
-                if (isFaveRefToGuide(doc)) {
-                    favesSkipped++;
-                    // Loguear para verificar qué se está omitiendo
-                    const glosa = doc.glosa || doc.glosa_enc || 'Sin glosa';
-                    logInfo(`  ⏭️  Saltando FAVE ${doc.folio} (Referencia a Guía detectada en: "${glosa.substring(0, 50)}...")`);
-                    continue; // Saltar esta factura, ya contamos la GDVE
+        // Obtener documentos de cada tipo SECUENCIALMENTE para evitar error 429 (Rate Limiting)
+        const results = [];
+        for (const docType of DOCUMENT_TYPES) {
+            try {
+                // Pequeña pausa entre peticiones para no saturar la API
+                if (results.length > 0) {
+                    await new Promise(resolve => setTimeout(resolve, 500));
                 }
+
+                const docs = await getDocumentsByType(docType, fechaInicio, fechaFin);
+                logSuccess(`  ${docType}: ${docs.length} documentos`);
+                results.push({ type: docType, documents: docs });
+            } catch (error) {
+                logError(`  ${docType}: Error - ${error.message}`);
+                results.push({ type: docType, documents: [], error: error.message });
             }
-
-            doc._docType = result.type;
-            allDocuments.push(doc);
         }
-    }
 
-    logSuccess(`Resumen Deduplicación:`);
-    logSuccess(`  Total FAVEs procesadas: ${stats['FAVE'] || 0}`);
-    logSuccess(`  FAVEs omitidas (Ref a GDVE): ${favesSkipped}`);
-    logSuccess(`  Total GDVEs incluidas: ${stats['GDVE'] || 0}`);
-    logSuccess(`  Total final documentos: ${allDocuments.length}`);
+        let favesSkipped = 0;
 
-    return allDocuments;
+        for (const result of results) {
+            stats[result.type] = result.documents.length;
+
+            for (const doc of result.documents) {
+                // Lógica de Deduplicación FAVE vs GDVE
+                if (result.type === 'FAVE') {
+                    if (isFaveRefToGuide(doc)) {
+                        favesSkipped++;
+                        const glosa = doc.glosa || doc.glosa_enc || 'Sin glosa';
+                        logInfo(`  ⏭️  Saltando FAVE ${doc.folio} (Referencia a Guía detectada en: "${glosa.substring(0, 50)}...")`);
+                        continue;
+                    }
+                }
+
+                doc._docType = result.type;
+                allDocuments.push(doc);
+            }
+        }
+
+        logSuccess(`Resumen Deduplicación:`);
+        logSuccess(`  Total FAVEs procesadas: ${stats['FAVE'] || 0}`);
+        logSuccess(`  FAVEs omitidas (Ref a GDVE): ${favesSkipped}`);
+        logSuccess(`  Total GDVEs incluidas: ${stats['GDVE'] || 0}`);
+        logSuccess(`  Total final documentos: ${allDocuments.length}`);
+
+        return allDocuments;
+    });
 }
 
 /**

@@ -76,6 +76,11 @@ echo "   📊 Sincronizando datos del mes actual..."
 docker-compose exec -T axam-dashboard node scripts/syncDaily.js current
 echo "   ✅ Datos del mes actual sincronizados"
 
+# Sincronizar ventas semanales (últimas 24 semanas para filtro semanal)
+echo "   📅 Sincronizando ventas semanales (últimas 24 semanas)..."
+docker-compose exec -T axam-dashboard node scripts/syncDaily.js weeks 24
+echo "   ✅ Ventas semanales sincronizadas"
+
 # Sincronizar compras históricas (desde 2021)
 echo "   💰 Sincronizando compras históricas (desde 2021)..."
 docker-compose exec -T axam-dashboard node scripts/syncCompras.js full
