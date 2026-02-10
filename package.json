@@ -14,7 +14,6 @@
     "sync:stock": "node scripts/actualizarStock.js",
     "sync:daily": "node scripts/syncDaily.js daily",
     "sync:init": "node scripts/syncDaily.js init",
-    "test:fave": "node scripts/testFAVE.js",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "prisma:studio": "prisma studio",

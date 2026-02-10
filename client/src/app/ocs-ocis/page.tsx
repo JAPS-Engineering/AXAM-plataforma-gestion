@@ -181,6 +181,18 @@ function SummaryTable({ title, items, onUpdate, onSendToManager, isSending, sort
 
 import { ConfirmationModal } from "@/components/confirmation-modal";
 
+const getDollarObserved = async (): Promise<number | null> => {
+    try {
+        const res = await fetch("https://mindicador.cl/api");
+        if (!res.ok) throw new Error("Error fetching mindicador.cl");
+        const data = await res.json();
+        return data.dolar?.valor || null;
+    } catch (error) {
+        console.error("Error fetching dollar value:", error);
+        return null; // Fallback to manual input
+    }
+};
+
 export default function OcsOcisPage() {
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState<ProductoDashboard[]>([]);
@@ -449,7 +461,7 @@ export default function OcsOcisPage() {
                         precioUnit: i.producto.costo,
                         unidad: i.producto.unidad || "U"
                     })),
-                    observaciones: "[PRUEBA - NO PROCESAR] Ingreso de prueba desde AXAM Dashboard - Plataforma en desarrollo"
+                    observaciones: "Generado desde Plataforma de Gestión AXAM"
                 };
 
                 const res = await fetch("/api/purchase/manager/oc", {
@@ -528,9 +540,20 @@ export default function OcsOcisPage() {
             groups.get(rut)?.push(item);
         }
 
-        const tipoCambioRes = prompt("Ingrese Tipo de Cambio (USD a CLP):", "950");
-        if (tipoCambioRes === null) return;
-        const tipoCambio = Number(tipoCambioRes) || 950;
+        // Obtener valor del dólar automáticamente o preguntar
+        let tipoCambio = 950; // Valor por defecto seguro
+        const dollarValue = await getDollarObserved();
+
+        if (dollarValue) {
+            console.log(`Usando valor del dólar automático: ${dollarValue}`);
+            // Opcional: Avisar al usuario brevemente o solo usarlo. 
+            // Para confirmación explicita, podríamos mostrarlo en un confirm, pero el usuario pidió "automáticamente".
+            tipoCambio = dollarValue;
+        } else {
+            const tipoCambioRes = prompt("No se pudo obtener el valor del dólar automáticamente. Ingrese Tipo de Cambio (USD a CLP):", "950");
+            if (tipoCambioRes === null) return;
+            tipoCambio = Number(tipoCambioRes) || 950;
+        }
 
         setSendingOCI(true);
         closeConfirmationModal();
@@ -572,21 +595,48 @@ export default function OcsOcisPage() {
                     }
                 }
 
+                const processedItems = [];
+                for (const i of groupItems) {
+                    let precioUSD = 0;
+
+                    if (!i.producto.costo || i.producto.costo === 0) {
+                        const userPrice = prompt(`El producto ${i.producto.sku} no tiene costo CLP registrado. Ingrese precio unitario en USD:`);
+                        if (userPrice === null) {
+                            results.push(`⚠️ ${currentNombre}: Cancelado por usuario (precio no ingresado para ${i.producto.sku}).`);
+                            processedItems.length = 0; // Clear items to prevent processing
+                            break; // Cancel this provider's order
+                        }
+                        if (userPrice) {
+                            // Permitir coma o punto
+                            precioUSD = parseFloat(userPrice.replace(',', '.')) || 0;
+                        }
+                    } else {
+                        precioUSD = i.producto.costo / tipoCambio;
+                    }
+
+                    // Redondear a un máximo de 2 decimales para cumplir con Manager+
+                    precioUSD = Math.round(precioUSD * 100) / 100;
+
+                    processedItems.push({
+                        sku: i.producto.sku,
+                        descripcion: i.producto.descripcion,
+                        cantidad: i.compraRealizar,
+                        precioUnit: precioUSD,
+                        unidad: i.producto.unidad || "U"
+                    });
+                }
+
+                if (processedItems.length === 0) continue;
+
                 const payload = {
                     proveedor: {
                         nombre: currentNombre || "Proveedor Importación",
                         rut: currentRut
                     },
-                    items: groupItems.map(i => ({
-                        sku: i.producto.sku,
-                        descripcion: i.producto.descripcion,
-                        cantidad: i.compraRealizar,
-                        precioUnit: i.producto.costo || 100, // Debería ser FOB real
-                        unidad: i.producto.unidad || "U"
-                    })),
+                    items: processedItems,
                     moneda: "USD",
                     tipoCambio,
-                    observaciones: "[PRUEBA - NO PROCESAR] Ingreso de prueba desde AXAM Dashboard (Importación) - Plataforma en desarrollo"
+                    observaciones: "Generado desde Plataforma de Gestión AXAM (Importación)"
                 };
 
                 const res = await fetch("/api/purchase/manager/oci", {
