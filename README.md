@@ -1,213 +1,72 @@
-# Sistema de Gesti?n de Ventas - AXAM
+# AXAM Dashboard — Sistema de Gestión de Ventas y Compras
 
-Este sistema permite:
-1. **Mapear productos** desde Manager+ a una base de datos local (SKU y descripci?n)
-2. **Calcular ventas mensuales** desde Facturas de Venta Electr?nica (FAVE) desde enero 2025
+Dashboard integral para la gestión de ventas, compras, stock y análisis de productos. Se conecta a **Manager+** (ERP) para sincronizar datos automáticamente y los almacena en una base de datos SQLite local.
 
-## Instalaci?n
+## Stack Tecnológico
+
+| Componente | Tecnología |
+|---|---|
+| Backend / API | Node.js + Express |
+| Frontend | Next.js (React/TypeScript) |
+| Base de datos | SQLite (via Prisma ORM) |
+| Contenedor | Docker + Docker Compose |
+| CRON | `node-cron` (dentro del servidor) |
+| ERP | Manager+ API REST |
+
+---
+
+## Inicio Rápido
+
+### Requisitos previos
+
+- Docker y Docker Compose
+- Archivo `.env` configurado (ver sección Configuración)
+
+### Setup desde cero
 
 ```bash
-npm install
-```
-
-## Configuraci?n
-
-1. Copia el archivo `env.example` a `.env`
-2. Configura las credenciales de Manager+ en `.env`
-
-```bash
+# 1. Copiar y configurar variables de entorno
 cp env.example .env
+# Editar .env con tus credenciales
+
+# 2. Ejecutar setup completo (DB + migraciones + sync histórico)
+chmod +x start_fresh.sh
+./start_fresh.sh
 ```
 
-Luego edita el archivo `.env` y configura:
-- `ERP_BASE_URL`: URL base de la API de Manager+ (por defecto: https://axam.managermas.cl/api)
-- `ERP_USERNAME`: Usuario para autenticaci?n en Manager+
-- `ERP_PASSWORD`: Contrase?a para autenticaci?n en Manager+
-- `RUT_EMPRESA`: RUT de la empresa (formato: 12345678-9)
-- `DB_PATH`: Ruta donde se guardar? la base de datos SQLite (por defecto: ./data/ventas.db)
+El script `start_fresh.sh` realiza automáticamente:
+1. Detiene servicios y limpia la DB anterior
+2. Construye imagen Docker
+3. Crea la base de datos con Prisma
+4. Levanta el servidor
+5. Sincroniza: productos → ventas históricas (desde 2021) → mes actual → ventas semanales (24 semanas) → compras históricas
 
-## Uso
-
-### Inicializar Base de Datos
+### Levantar (después del setup)
 
 ```bash
-npm run init:db
+docker-compose up -d         # Iniciar
+docker-compose down          # Detener
+docker logs -f axam-dashboard  # Ver logs
 ```
 
-### Sincronizar Productos
+**Dashboard:** [http://localhost:3001](http://localhost:3001)
 
-Obtiene todos los productos de Manager+ y los guarda en la base de datos:
+---
 
-```bash
-npm run sync:productos
-```
-
-### Sincronizar Ventas
-
-Obtiene todas las ventas (FAVE + GDVE + BOVE + NCVE) desde **enero 2021**, calcula las ventas por producto y mes, y las guarda en la base de datos:
-
-```bash
-npm run sync:ventas
-```
-
-Para ejecutarlo dentro del contenedor Docker:
-```bash
-docker-compose exec axam-dashboard npm run sync:ventas
-```
-
-### Sincronizar Stock
-
-Obtiene el stock actual de todos los productos desde Manager+ y lo sincroniza con la base de datos. El stock se obtiene de la "Bodega General" excluyendo bodegas temporales:
-
-```bash
-npm run sync:stock
-```
-
-Este script:
-- Obtiene todos los productos con stock desde Manager+ usando el endpoint con `con_stock=S`
-- Extrae el stock del campo "stock" (array de arrays con campo "saldo")
-- Filtra solo las bodegas generales (excluye bodegas temporales)
-- Actualiza el campo `stockActual` en la tabla `ventas_actuales` de la base de datos
-
-**⚠️ IMPORTANTE**: Este script debe ejecutarse periódicamente (recomendado cada hora) para mantener el stock actualizado. La vista tipo Excel muestra el stock desde la base de datos, no consulta Manager+ en tiempo real para evitar tiempos de espera largos.
-
-### Sincronizar Ventas del Mes Actual
-
-Obtiene solo las FAVEs del mes actual (desde el inicio del mes hasta hoy), las procesa y actualiza la tabla `ventas_actuales` con las cantidades vendidas:
-
-```bash
-npm run sync:ventas:actuales
-```
-
-Este script:
-- Obtiene solo las FAVEs del mes actual (desde el inicio del mes hasta hoy)
-- Procesa las FAVEs y extrae los productos vendidos
-- Actualiza la tabla `ventas_actuales` sumando las cantidades vendidas (permite múltiples ejecuciones)
-- Permite consultar cuánto se ha vendido actualmente además del stock que queda
-
-**⚠️ IMPORTANTE**: Este script está diseñado para ejecutarse periódicamente (recomendado cada hora) junto con la sincronización de stock, para mantener actualizadas tanto las ventas del mes actual como el stock disponible.
-
-#### Configurar Ejecución Automática Cada Hora
-
-Para ejecutar la sincronización de stock y ventas actuales automáticamente cada hora, puedes usar un cron job:
-
-1. **Abrir el crontab**:
-```bash
-crontab -e
-```
-
-2. **Agregar las siguientes líneas** (ajusta la ruta según tu instalación):
-```bash
-# Sincronizar stock cada hora
-0 * * * * cd /home/jeanf/japs/axam-ordenes-de-compras && /usr/bin/npm run sync:stock >> /home/jeanf/japs/axam-ordenes-de-compras/logs/stock-sync.log 2>&1
-
-# Sincronizar ventas del mes actual cada hora
-0 * * * * cd /home/jeanf/japs/axam-ordenes-de-compras && /usr/bin/npm run sync:ventas:actuales >> /home/jeanf/japs/axam-ordenes-de-compras/logs/ventas-actuales-sync.log 2>&1
-```
-
-O si prefieres usar la ruta completa de node:
-```bash
-# Sincronizar stock cada hora
-0 * * * * cd /home/jeanf/japs/axam-ordenes-de-compras && /usr/bin/node scripts/actualizarStock.js >> /home/jeanf/japs/axam-ordenes-de-compras/logs/stock-sync.log 2>&1
-
-# Sincronizar ventas del mes actual cada hora
-0 * * * * cd /home/jeanf/japs/axam-ordenes-de-compras && /usr/bin/node scripts/syncVentasActuales.js >> /home/jeanf/japs/axam-ordenes-de-compras/logs/ventas-actuales-sync.log 2>&1
-```
-
-Esto ejecutará ambas sincronizaciones cada hora (al minuto 0 de cada hora).
-
-**Nota**: Asegúrate de crear el directorio `logs` si no existe:
-```bash
-mkdir -p logs
-```
-
-### Ejecutar Todo
-
-Ejecuta ambos scripts en secuencia:
-
-```bash
-npm start
-```
-
-### Consultar Ventas
-
-Consulta los datos de ventas guardados en la base de datos:
-
-```bash
-# Resumen de ventas por mes
-npm run consultar resumen
-
-# Ventas de un producto espec?fico
-npm run consultar producto <SKU>
-
-# Top productos por ventas
-npm run consultar top [limite]
-```
-
-### Test de FAVE
-
-Script de prueba para inspeccionar la estructura de una FAVE y diagnosticar problemas de extracción:
-
-```bash
-npm run test:fave
-```
-
-Este script:
-- Obtiene una FAVE de ejemplo de los últimos 7 días
-- Muestra la estructura completa de la FAVE
-- Intenta extraer productos y muestra logs detallados
-- Ayuda a identificar por qué no se están extrayendo productos correctamente
-
-## Estructura de Base de Datos
-
-### Tabla: productos
-- `id`: INTEGER PRIMARY KEY
-- `sku`: TEXT UNIQUE (C?digo del producto)
-- `descripcion`: TEXT (Descripci?n del producto)
-- `created_at`: TEXT (Fecha de creaci?n)
-- `updated_at`: TEXT (Fecha de actualizaci?n)
-
-### Tabla: ventas_mensuales
-- `id`: INTEGER PRIMARY KEY
-- `producto_id`: INTEGER (FK a productos)
-- `ano`: INTEGER (A?o de la venta)
-- `mes`: INTEGER (Mes de la venta, 1-12)
-- `cantidad_vendida`: REAL (Cantidad total vendida en el mes)
-- `monto_neto`: REAL (Monto neto total en CLP)
-- `created_at`: TEXT (Fecha de creaci?n)
-- `updated_at`: TEXT (Fecha de actualizaci?n)
-- UNIQUE(producto_id, ano, mes)
-
-## Logs
-
-Los scripts generan logs detallados en la consola mostrando:
-- Progreso de sincronizaci?n
-- Productos procesados
-- FAVEs procesadas
-- Errores y advertencias
-
-## Notificaciones por Email - Stock Bajo
-
-El sistema incluye alertas automáticas por email cuando productos tienen stock por debajo del mínimo configurado.
-
-### ¿Cómo funciona?
-
-Todos los días a las **17:00 (hora Chile)**, el sistema:
-1. Sincroniza las ventas actuales
-2. Consulta productos que tienen stock mínimo configurado
-3. Detecta cuáles tienen `stockActual < stockMinimo`
-4. Envía un email de alerta a los destinatarios configurados
-
-### Configuración de Email (Gmail)
-
-Para activar las notificaciones necesitas configurar una cuenta Gmail con contraseña de aplicación:
-
-1. **Crear/usar cuenta Gmail** dedicada
-2. **Activar verificación en 2 pasos** en la cuenta
-3. **Generar contraseña de aplicación**: https://myaccount.google.com/apppasswords
-4. **Configurar variables en `.env`**:
+## Configuración (.env)
 
 ```env
+# === Manager+ API ===
+ERP_BASE_URL=https://axam.managermas.cl/api
+ERP_USERNAME=tu_usuario
+ERP_PASSWORD=tu_password
+RUT_EMPRESA=12345678-9
+
+# === Base de datos ===
+DATABASE_URL="file:../data/dev.db"
+DB_PATH=./data/dev.db
+
+# === Email (alertas de stock bajo) ===
 EMAIL_HOST=smtp.gmail.com
 EMAIL_PORT=587
 EMAIL_USER=tu-correo@gmail.com
@@ -215,32 +74,225 @@ EMAIL_PASSWORD=xxxx-xxxx-xxxx-xxxx
 EMAIL_FROM="Alertas AXAM <tu-correo@gmail.com>"
 ```
 
-### Configurar Destinatarios
+---
 
-Desde la interfaz web:
-1. Ir a `/minimos` (Configuración de Stock Mínimo)
-2. Click en botón **"Configurar Notificaciones"**
-3. Agregar emails de destinatarios
-4. Usar el ícono ✈️ para enviar email de prueba
+## Vistas del Dashboard
+
+| Ruta | Página | Descripción |
+|---|---|---|
+| `/` | Dashboard principal | KPIs globales, ventas por producto, stock, compra sugerida |
+| `/ventas/analisis` | Análisis personalizado | Predicciones, algoritmos de sugerencia, cobertura |
+| `/ventas/graficos` | Análisis de mercado | Gráficos de tendencias y ranking de productos |
+| `/ventas/ingresos` | Ingresos | Análisis de ventas monetarias (CLP) |
+| `/ventas/objetivos` | Objetivos y vendedores | Metas mensuales por vendedor y cumplimiento |
+| `/analisis-margenes` | Análisis de márgenes | Márgenes por producto, listas de precios |
+| `/historial` | Historial de ventas | Vista detallada mensual/semanal |
+| `/historial-compras` | Historial de compras | Compras históricas y estadísticas |
+| `/compras` | Compras últimos 12M | Resumen de compras por producto |
+| `/ocs-ocis` | OCs y OCIs | Órdenes de compra internas |
+| `/logistica` | Logística | Vista de logística |
+| `/minimos` | Stock mínimo | Configuración de mínimos y alertas |
+
+---
+
+## Sincronización de Datos
+
+### Tareas CRON Automáticas
+
+El servidor programa automáticamente dos tareas:
+
+#### 🕐 01:00 AM (Chile) — Sincronización diaria
+
+Ejecuta `syncYesterday()` + `syncComprasYesterday()`:
+
+| Paso | Función | Qué sincroniza |
+|---|---|---|
+| 1 | `syncNewProducts()` | Productos nuevos desde Manager+ |
+| 2 | `syncFullMonth()` | Recalcula el mes completo (ventas mensuales) |
+| 3 | `syncWeek()` | Actualiza la semana actual (ventas semanales) |
+| 4 | `syncCurrentMonthData()` | Stock actual + ventas acumuladas del mes |
+| 5 | `syncComprasYesterday()` | Compras del día anterior + costos |
+
+**Datos auto-capturados durante la sincronización:**
+
+| Dato | Cómo se obtiene |
+|---|---|
+| **Vendedores** | Se crean automáticamente al procesar cada venta (campo `usuario_vendedor` de Manager+) |
+| **Proveedores** | Se extraen automáticamente de cada compra histórica (campo `proveedor` + `rutProveedor`) |
+| **Costos** | Se actualizan en productos al sincronizar compras (`precioUltimaCompra`) |
+
+#### 🕔 17:00 PM (Chile) — Alerta de stock bajo
+
+Ejecuta `alertaStockBajo.js`: revisa productos bajo mínimo y envía emails de alerta.
+
+### Sincronización Manual
+
+```bash
+# Dentro del contenedor Docker:
+
+# Sincronización diaria (la misma que ejecuta el CRON)
+docker-compose exec axam-dashboard node scripts/syncDaily.js daily
+
+# Sync completo desde 2021
+docker-compose exec axam-dashboard node scripts/syncDaily.js full
+
+# Sync de un mes específico
+docker-compose exec axam-dashboard node scripts/syncDaily.js month 2026 2
+
+# Sync últimas N semanas (para filtro semanal)
+docker-compose exec axam-dashboard node scripts/syncDaily.js weeks 24
+
+# Solo mes actual (stock + ventas)
+docker-compose exec axam-dashboard node scripts/syncDaily.js current
+
+# Solo productos
+docker-compose exec axam-dashboard node scripts/syncDaily.js products
+
+# Productos con listas de precios
+docker-compose exec axam-dashboard node scripts/syncProductos.js
+
+# Compras completas desde 2021
+docker-compose exec axam-dashboard node scripts/syncCompras.js full
+
+# Alerta de stock bajo manual
+docker-compose exec axam-dashboard node scripts/alertaStockBajo.js
+```
+
+---
+
+## Estructura del Proyecto
+
+```
+test-syncVentas/
+├── client/                  # Frontend Next.js
+│   └── src/app/             # Páginas del dashboard
+├── controllers/             # Controladores Express
+│   ├── dashboardController.js
+│   ├── ventasController.js
+│   └── ...
+├── routes/                  # Rutas de la API
+│   ├── ventas.js
+│   ├── dashboard.js
+│   ├── sync.js
+│   └── ...
+├── services/                # Servicios de negocio
+│   ├── salesService.js      # Conexión con Manager+ (ventas)
+│   ├── providerService.js   # Gestión de proveedores
+│   └── rotacionService.js   # Cálculos de rotación
+├── scripts/                 # Scripts de sincronización
+│   ├── syncDaily.js         # Sync ventas (diario, inicial, semanal)
+│   ├── syncCompras.js       # Sync compras históricas
+│   ├── syncProductos.js     # Sync productos + listas de precios
+│   └── alertaStockBajo.js   # Alertas por email
+├── prisma/
+│   └── schema.prisma        # Esquema de base de datos
+├── utils/                   # Utilidades compartidas
+├── data/                    # Base de datos SQLite (dev.db)
+├── server.js                # Servidor Express + CRON
+├── docker-compose.yml       # Configuración Docker
+├── Dockerfile               # Imagen del contenedor
+├── start_fresh.sh           # Script de setup completo
+└── .env                     # Variables de entorno
+```
+
+---
+
+## Base de Datos (Prisma/SQLite)
+
+### Tablas principales
+
+| Tabla | Descripción | Clave única |
+|---|---|---|
+| `productos` | Catálogo de productos (SKU, descripción, familia, stock) | `sku` |
+| `ventas_historicas` | Ventas mensuales por producto y vendedor | `productoId + año + mes + vendedor` |
+| `ventas_semanales` | Ventas semanales por producto y vendedor | `productoId + año + semana + vendedor` |
+| `ventas_actuales` | Ventas del mes en curso + stock actual | `productoId + vendedor` |
+| `compras_historicas` | Compras mensuales por producto | `productoId + año + mes` |
+| `vendedores` | Catálogo de vendedores | `codigo` |
+| `precios_listas` | Precios por lista (89, 652, 386) | `productoId + listaId` |
+| `objetivos_ventas` | Metas mensuales por vendedor | `vendedorId + año + mes` |
+| `emails_notificacion` | Destinatarios de alertas | `email` |
+
+---
+
+## API Reference
+
+### Endpoints principales
+
+| Endpoint | Descripción |
+|---|---|
+| `GET /api/dashboard` | Dashboard principal (KPIs, ventas, stock) |
+| `GET /api/ventas/dashboard` | Ventas por producto (filtros: frecuencia, semanas, meses) |
+| `GET /api/ventas/resumen` | KPIs y resumen global |
+| `GET /api/ventas/tendencias` | Datos de tendencias |
+| `GET /api/ventas/graficos` | Gráficos avanzados |
+| `GET /api/compras/historial` | Historial de compras |
+| `GET /api/compras/historial/stats` | Estadísticas de compras |
+| `GET /api/margenes` | Análisis de márgenes |
+| `GET /api/productos` | Lista de productos |
+| `GET /api/rotacion` | Datos de rotación |
+| `GET /api/sync/stream` | Sincronización en vivo (SSE) |
+
+### Filtros comunes
+
+| Parámetro | Valores | Descripción |
+|---|---|---|
+| `frequency` | `MONTHLY`, `WEEKLY` | Frecuencia temporal |
+| `weeks` | 1-24 | Número de semanas (modo semanal) |
+| `meses` | 3, 6, 12, 24, 36 | Meses de historia (modo mensual) |
+| `marca` | `KC`, `Todas` | Filtro por marca/familia |
+| `origen` | `Nacional`, `Internacional`, `Todos` | Origen del producto |
+
+---
+
+## Notificaciones por Email
+
+### Configuración
+
+1. Crear/usar cuenta Gmail con verificación en 2 pasos
+2. Generar contraseña de aplicación: https://myaccount.google.com/apppasswords
+3. Configurar variables `EMAIL_*` en `.env`
+4. Agregar destinatarios desde `/minimos` → "Configurar Notificaciones"
 
 ### API de Notificaciones
 
 | Endpoint | Método | Descripción |
-|----------|--------|-------------|
+|---|---|---|
 | `/api/notifications/emails` | GET | Lista emails configurados |
 | `/api/notifications/emails` | POST | Agregar email `{ email: "..." }` |
 | `/api/notifications/emails/:email` | DELETE | Eliminar email |
 | `/api/notifications/test` | POST | Enviar prueba `{ email: "..." }` |
 | `/api/notifications/status` | GET | Estado del servicio |
 
-### Ejecutar Alerta Manualmente
+---
+
+## Rebuild y Mantenimiento
 
 ```bash
-node scripts/alertaStockBajo.js
+# Reconstruir imagen (después de cambios en código del servidor)
+docker-compose down && docker-compose build --no-cache && docker-compose up -d
+
+# Reconstruir frontend solamente (cambios en client/)
+docker-compose exec axam-dashboard sh -c "cd client && npm run build"
+docker-compose restart
+
+# Reset completo (⚠️ borra todos los datos)
+./start_fresh.sh
+
+# Ver estado del contenedor
+docker-compose ps
+
+# Ver logs en tiempo real
+docker logs -f axam-dashboard
 ```
 
-### Tareas CRON Programadas
+---
 
-El servidor programa automáticamente:
-- **01:00 AM (Chile)**: Sincronización diaria de ventas
-- **17:00 PM (Chile)**: Alerta de stock bajo
+## Notas Importantes
+
+- **Zona horaria**: El servidor opera en `America/Santiago` (Chile)
+- **Puerto**: El dashboard se expone en el puerto `3001` (mapea al `3000` interno)
+- **Rate Limiting**: Las peticiones al ERP se ejecutan secuencialmente con pausa de 1s entre tipos de documento para evitar errores HTTP 429
+- **Volúmenes Docker**: Los directorios `data/`, `scripts/` y `services/` se montan como volúmenes, permitiendo cambios en caliente sin rebuild
+- **Base de datos**: SQLite almacenada en `./data/dev.db`, persiste entre reinicios del contenedor
+- **Filtro semanal**: Requiere datos en `ventas_semanales` (poblados por `syncWeeksBack` en setup y `syncWeek` diario)
