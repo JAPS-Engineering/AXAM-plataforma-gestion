@@ -21,12 +21,12 @@ const prisma = getPrismaClient();
  * Versión simplificada que usa el mismo cliente de base de datos que el resto de la app
  */
 async function syncNewProducts() {
-    logSection('SINCRONIZANDO PRODUCTOS');
+    logInfo('📦 Sincronizando productos...');
 
     try {
         // 1. Obtener productos del ERP
         const erpProducts = await getAllProducts();
-        logInfo(`Obtenidos ${erpProducts.length} productos del ERP`);
+
 
         if (erpProducts.length === 0) {
             logWarning('No se encontraron productos en el ERP');
@@ -42,7 +42,7 @@ async function syncNewProducts() {
                 const sku = (p.codigo_prod || p.cod_producto || p.codigo || p.sku || '').trim();
                 return whiteList.has(sku);
             });
-            logInfo(`Filtrado: ${productsToProcess.length} productos permitidos (de ${erpProducts.length})`);
+
         }
 
         let created = 0;
@@ -57,7 +57,7 @@ async function syncNewProducts() {
         const existingMap = new Map();
         existingProducts.forEach(p => existingMap.set(p.sku, p));
 
-        logInfo(`Productos en DB local: ${existingProducts.length}`);
+
 
         const updates = [];
         const creates = [];
@@ -92,7 +92,7 @@ async function syncNewProducts() {
         // 4. Ejecutar operaciones en paralelo (por partes si son muchas)
         // Usamos transacciones o Promise.all
         if (creates.length > 0) {
-            logInfo(`Creando ${creates.length} nuevos productos...`);
+
             // Batch create logic could be used here if supported, but simple loop is fine for now
             // For safety with transaction limits, we process in chunks of 50
             for (let i = 0; i < creates.length; i += 50) {
@@ -101,7 +101,7 @@ async function syncNewProducts() {
         }
 
         if (updates.length > 0) {
-            logInfo(`Actualizando ${updates.length} productos...`);
+
             for (let i = 0; i < updates.length; i += 50) {
                 await Promise.all(updates.slice(i, i + 50));
             }
@@ -110,7 +110,7 @@ async function syncNewProducts() {
         created = creates.length;
         updated = updates.length;
 
-        logSuccess(`Productos: ${created} nuevos, ${updated} actualizados`);
+        logInfo(`  📦 Productos: ${created} nuevos, ${updated} actualizados`);
         return { created, updated };
 
     } catch (error) {
@@ -127,7 +127,7 @@ async function syncDaySales(date) {
     const month = getMonth(date) + 1;
     const dateStr = format(date, 'yyyy-MM-dd');
 
-    logInfo(`Sincronizando ventas del ${dateStr}...`);
+
 
     try {
         const { sales, documentsCount } = await getDailySales(date);
@@ -176,7 +176,7 @@ async function syncDaySales(date) {
  * @param {boolean} includeToday - Si true, incluye ventas hasta AHORA. Si false, solo hasta ayer (para CRON)
  */
 async function syncCurrentMonthData(includeToday = false) {
-    logSection('SINCRONIZANDO DATOS DEL MES ACTUAL');
+    logInfo('📊 Sincronizando datos del mes actual...');
 
     const { getChileDate, formatChileDate } = require('../utils/timezone');
 
@@ -192,13 +192,13 @@ async function syncCurrentMonthData(includeToday = false) {
         if (includeToday) {
             // Sincronización manual: incluir ventas hasta AHORA
             endDate = new Date(today);
-            logInfo(`Obteniendo ventas del mes actual (hasta ahora: ${format(endDate, 'dd/MM/yyyy HH:mm')})...`);
+
         } else {
             // Sincronización automática (CRON): solo hasta ayer 23:59:59
             // Las ventas de hoy se obtienen en tiempo real en el dashboard
             endDate = subDays(today, 1);
             endDate.setHours(23, 59, 59, 999);
-            logInfo('Obteniendo ventas del mes actual (hasta ayer)...');
+
         }
 
         // Si es el primer día del mes y no incluimos hoy, el rango puede quedar vacío
@@ -221,7 +221,7 @@ async function syncCurrentMonthData(includeToday = false) {
         }
 
         // 2. Obtener stock actual (siempre live)
-        logInfo('Obteniendo stock actual...');
+
         const stockMap = await getCurrentStock();
 
         // 3. Actualizar VentaActual con los datos acumulados hasta ayer
@@ -285,7 +285,7 @@ async function syncCurrentMonthData(includeToday = false) {
         }
 
         if (ventasAInsertar.length > 0) {
-            logInfo(`Insertando ${ventasAInsertar.length} registros en VentaActual...`);
+
             // createMany es mucho más rápido
             await prisma.ventaActual.createMany({
                 data: ventasAInsertar
@@ -293,7 +293,7 @@ async function syncCurrentMonthData(includeToday = false) {
             updated = ventasAInsertar.length;
         }
 
-        logSuccess(`VentaActual: ${updated} productos actualizados, ${productosConVentas} con ventas (hasta ${format(endDate, 'dd/MM/yyyy HH:mm')})`);
+        logInfo(`  📊 VentaActual: ${updated} registros, ${productosConVentas} con ventas`);
         return { updated, productosConVentas };
 
     } catch (error) {
@@ -381,7 +381,7 @@ async function upsertMonthlySale(productoId, ano, mes, cantidad, montoNeto, vend
  * Sincronizar mes completo (OPTIMIZADO)
  */
 async function syncFullMonth(year, month) {
-    logSection(`SINCRONIZANDO MES COMPLETO: ${month}/${year}`);
+    logInfo(`📅 Sincronizando mes ${month}/${year}...`);
 
     try {
         const { sales, documentsCount } = await getMonthlySales(year, month);
@@ -472,7 +472,7 @@ async function syncFullMonth(year, month) {
         }
 
         updatedCount = creates.length + updates.length;
-        logSuccess(`${documentsCount} documentos procesados, ${updatedCount} registros actualizados en VentaHistorica`);
+        logInfo(`  📅 ${month}/${year}: ${documentsCount} docs, ${updatedCount} registros`);
 
         return { processed: documentsCount, updated: updatedCount };
 
@@ -488,7 +488,7 @@ async function syncFullMonth(year, month) {
  * @param {number} week 
  */
 async function syncWeek(year, week) {
-    logSection(`SINCRONIZANDO SEMANA ${week}/${year}`);
+    logInfo(`📆 Sincronizando semana ${week}/${year}...`);
 
     try {
         const { sales, documentsCount } = await getWeeklySales(year, week);
@@ -556,7 +556,7 @@ async function syncWeek(year, week) {
         }
 
         const updated = creates.length + updates.length;
-        logSuccess(`Semana ${week}: ${documentsCount} docs, ${updated} registros actualizados`);
+        logInfo(`  📆 Semana ${week}: ${documentsCount} docs, ${updated} registros`);
         return { processed: documentsCount, updated };
 
     } catch (error) {
@@ -569,7 +569,7 @@ async function syncWeek(year, week) {
  * Sincronizar últimas N semanas
  */
 async function syncWeeksBack(weeks = 12) {
-    logSection(`SINCRONIZANDO ÚLTIMAS ${weeks} SEMANAS`);
+    logInfo(`📆 Sincronizando últimas ${weeks} semanas...`);
     const { subWeeks, getISOWeek, getYear } = require('date-fns');
 
     const today = new Date();
@@ -582,7 +582,7 @@ async function syncWeeksBack(weeks = 12) {
         await syncWeek(year, week);
     }
 
-    logSuccess('Sincronización semanal completada');
+
 }
 
 /**
@@ -590,7 +590,7 @@ async function syncWeeksBack(weeks = 12) {
  * Sincroniza los últimos N meses
  */
 async function syncInitial(months = 12) {
-    logSection(`SINCRONIZACIÓN INICIAL (${months} meses)`);
+    logInfo(`🔄 Sincronización inicial (${months} meses)...`);
 
     const today = new Date();
 
@@ -610,7 +610,7 @@ async function syncInitial(months = 12) {
         // 3. Sincronizar datos del mes actual
         await syncCurrentMonthData();
 
-        logSection('SINCRONIZACIÓN INICIAL COMPLETADA');
+        logSuccess('✅ Sincronización inicial completada');
 
     } catch (error) {
         logError(`Error en sincronización inicial: ${error.message}`);
@@ -623,7 +623,7 @@ async function syncInitial(months = 12) {
  * Para análisis multi-año
  */
 async function syncFull2021() {
-    logSection('SINCRONIZACIÓN COMPLETA (DESDE ENERO 2021)');
+    logInfo('🔄 Sincronización completa (desde enero 2021)...');
 
     const startYear = 2021;
     const startMonth = 1;
@@ -654,7 +654,7 @@ async function syncFull2021() {
         // 3. Sincronizar datos del mes actual
         await syncCurrentMonthData();
 
-        logSection(`SINCRONIZACIÓN COMPLETA: ${totalMeses} meses desde enero 2021`);
+        logSuccess(`✅ Sincronización completa: ${totalMeses} meses`);
 
     } catch (error) {
         logError(`Error en sincronización completa: ${error.message}`);

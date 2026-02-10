@@ -1,10 +1,11 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Package2, ChevronLeft, ChevronRight, LayoutDashboard, AlertTriangle, ShoppingCart, TrendingUp, BarChart3, Target, Users, DollarSign, Percent, FileText } from "lucide-react";
+import { Package2, ChevronLeft, ChevronRight, LayoutDashboard, AlertTriangle, ShoppingCart, TrendingUp, BarChart3, Target, Users, DollarSign, Percent, FileText, Shield, LogOut } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { useAuth } from "@/components/auth-provider";
 
 interface SidebarProps {
     className?: string;
@@ -13,6 +14,7 @@ interface SidebarProps {
 export function Sidebar({ className }: SidebarProps) {
     const [collapsed, setCollapsed] = useState(false);
     const pathname = usePathname();
+    const { user, logout } = useAuth();
 
     const navItems = [
         { href: "/", label: "Órdenes de Compra", icon: LayoutDashboard },
@@ -27,6 +29,10 @@ export function Sidebar({ className }: SidebarProps) {
         { href: "/historial-compras", label: "Historial de Compras", icon: DollarSign },
         { href: "/analisis-margenes", label: "Análisis de Márgenes", icon: Percent },
         { href: "/logistica", label: "Configuración Logística", icon: Package2 },
+    ];
+
+    const adminItems = [
+        { href: "/usuarios", label: "Gestión de Usuarios", icon: Shield },
     ];
 
     return (
@@ -59,8 +65,32 @@ export function Sidebar({ className }: SidebarProps) {
             </div>
 
             {/* Navigation */}
-            <nav className="flex-1 py-4">
+            <nav className="flex-1 py-4 overflow-y-auto">
                 {navItems.map((item) => {
+                    const isActive = pathname === item.href;
+                    const Icon = item.icon;
+                    return (
+                        <Link
+                            key={item.href}
+                            href={item.href}
+                            className={cn(
+                                "flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors",
+                                isActive
+                                    ? "bg-blue-600/20 text-blue-400 border-r-2 border-blue-400"
+                                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                            )}
+                        >
+                            <Icon className="h-5 w-5 flex-shrink-0" />
+                            {!collapsed && <span>{item.label}</span>}
+                        </Link>
+                    );
+                })}
+
+                {/* Separator */}
+                <div className="my-3 mx-4 border-t border-slate-700" />
+
+                {/* Admin Section */}
+                {adminItems.map((item) => {
                     const isActive = pathname === item.href;
                     const Icon = item.icon;
                     return (
@@ -82,12 +112,43 @@ export function Sidebar({ className }: SidebarProps) {
             </nav>
 
             {/* Footer */}
-            {!collapsed && (
-                <div className="p-4 border-t border-slate-700 text-xs text-slate-400">
-                    <p>Panel de Compras</p>
-                    <p className="text-slate-500">v1.0.0</p>
+            <div className="border-t border-slate-700">
+                {/* User info + Logout */}
+                <div className="p-3">
+                    {!collapsed ? (
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <div className="h-8 w-8 rounded-full bg-blue-600/20 flex items-center justify-center flex-shrink-0">
+                                    <span className="text-xs font-bold text-blue-400">
+                                        {user?.username?.charAt(0).toUpperCase() || "U"}
+                                    </span>
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="text-sm font-medium text-slate-200 truncate">
+                                        {user?.nombre || user?.username || "Usuario"}
+                                    </p>
+                                    <p className="text-xs text-slate-500 truncate">{user?.username}</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={logout}
+                                className="p-2 rounded-lg hover:bg-red-600/20 text-slate-400 hover:text-red-400 transition-colors flex-shrink-0"
+                                title="Cerrar sesión"
+                            >
+                                <LogOut className="h-4 w-4" />
+                            </button>
+                        </div>
+                    ) : (
+                        <button
+                            onClick={logout}
+                            className="w-full p-2 rounded-lg hover:bg-red-600/20 text-slate-400 hover:text-red-400 transition-colors flex items-center justify-center"
+                            title="Cerrar sesión"
+                        >
+                            <LogOut className="h-5 w-5" />
+                        </button>
+                    )}
                 </div>
-            )}
+            </div>
         </aside>
     );
 }

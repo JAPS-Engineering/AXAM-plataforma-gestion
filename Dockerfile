@@ -37,6 +37,7 @@ RUN npm ci --omit=dev
 # Copiar el servidor backend
 COPY server.js ./
 COPY controllers/ ./controllers/
+COPY middleware/ ./middleware/
 COPY routes/ ./routes/
 COPY services/ ./services/
 COPY utils/ ./utils/

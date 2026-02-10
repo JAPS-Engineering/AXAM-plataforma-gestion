@@ -307,3 +307,16 @@ model EmailNotificacion {
 
   @@map("email_notificaciones")
 }
+
+// Usuarios del sistema (autenticación)
+model Usuario {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  passwordHash String   @map("password_hash")
+  nombre       String   @default("")
+  activo       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("usuarios")
+}

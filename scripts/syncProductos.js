@@ -27,12 +27,12 @@ const TARGET_LISTS = ['89', '652', '386'];
  */
 async function getAllProducts() {
     try {
-        logInfo('Obteniendo productos de Manager+...');
+
 
         const headers = await getAuthHeaders();
         const url = `${ERP_BASE_URL}/products/${RUT_EMPRESA}?con_stock=S&con_listaprecios=S&pic=1`;
 
-        logInfo(`URL: ${url}`);
+
 
         const response = await axios.get(url, { headers });
 
@@ -127,7 +127,7 @@ async function getPriceListsData() {
 
             const items = targetList.products || targetList.produtos || targetList.productos || targetList.detalles || targetList.items || [];
 
-            logInfo(`  - Lista ${listId}: ${items.length} items encontrados.`);
+
 
             items.forEach(item => {
                 const sku = (item.cod || item.codigo || item.sku || item.cod_articulo || '').trim();
@@ -142,7 +142,7 @@ async function getPriceListsData() {
             });
         }
 
-        logSuccess(`✅ Listas obtenidas. Total SKUs permitidos: ${skuData.size}`);
+        logInfo(`✅ Listas obtenidas: ${skuData.size} SKUs`);
         return skuData;
 
     } catch (error) {
@@ -155,7 +155,7 @@ async function getPriceListsData() {
  * Función principal - OPTIMIZADA con batch operations
  */
 async function main() {
-    logSection('SINCRONIZACIÓN DE PRODUCTOS Y PRECIOS');
+    logInfo('🔄 Sincronizando productos y precios...');
 
     try {
         // 1. Obtener Datos de Listas de Precios (Whitelist + Precios)
@@ -168,7 +168,7 @@ async function main() {
 
         // 2. Obtener TODA la base de productos de Manager+
         const allProducts = await getAllProducts();
-        logInfo(`Total productos en ERP: ${allProducts.length}`);
+
 
         if (allProducts.length === 0) {
             logWarning('No se encontraron productos en el ERP.');
@@ -180,19 +180,24 @@ async function main() {
             select: { id: true, sku: true }
         });
         const existingMap = new Map(existingProducts.map(p => [p.sku, p.id]));
-        logInfo(`Productos en DB local: ${existingProducts.length}`);
+
 
         // 4. Preparar datos para batch operations
         const whiteListSKUs = new Set(whiteListMap.keys());
         const productsToCreate = [];
         const productsToUpdate = [];
         const pricesData = new Map(); // sku -> prices
+        const processedSKUs = new Set(); // Para evitar duplicados en el mismo batch del ERP
 
         for (const product of allProducts) {
             const { sku, descripcion, familia, proveedor, unidad } = extractProductInfo(product);
 
             if (!sku || !descripcion) continue;
             if (!whiteListSKUs.has(sku)) continue;
+
+            // Si ya procesamos este SKU en este ciclo, lo ignoramos (deduplicación del ERP)
+            if (processedSKUs.has(sku)) continue;
+            processedSKUs.add(sku);
 
             const prices = whiteListMap.get(sku).prices;
             pricesData.set(sku, prices);
@@ -204,16 +209,16 @@ async function main() {
             }
         }
 
-        logInfo(`Filtrado: ${productsToCreate.length + productsToUpdate.length} productos permitidos (de ${allProducts.length})`);
+
 
         // 5. Batch CREATE new products
         if (productsToCreate.length > 0) {
             logInfo(`Creando ${productsToCreate.length} nuevos productos...`);
 
-            // Use createMany for bulk insert (much faster)
+            // createMany sin skipDuplicates (no soportado en SQLite)
+            // Los duplicados ya están filtrados por existingMap más arriba
             await prisma.producto.createMany({
-                data: productsToCreate,
-                skipDuplicates: true
+                data: productsToCreate
             });
         }
 
@@ -239,7 +244,7 @@ async function main() {
         const productIdMap = new Map(allDbProducts.map(p => [p.sku, p.id]));
 
         // 8. Batch INSERT/UPDATE prices
-        logInfo('Sincronizando precios...');
+
         const allPriceData = [];
 
         for (const [sku, prices] of pricesData) {
@@ -269,7 +274,7 @@ async function main() {
         }
 
         // 9. CLEANUP: Delete products not in whitelist
-        logSection('LIMPIEZA DE BASE DE DATOS');
+
         const skusToDelete = [];
         for (const [sku, id] of productIdMap) {
             if (!whiteListSKUs.has(sku)) {
@@ -290,10 +295,7 @@ async function main() {
         // 10. Final stats
         const finalCount = await prisma.producto.count();
         const finalPrices = await prisma.precioLista.count();
-        logSection('RESUMEN');
-        logSuccess(`Total productos: ${finalCount}`);
-        logInfo(`Total precios: ${finalPrices}`);
-        logSuccess('\n✅ Sincronización completada\n');
+        logSuccess(`\u2705 Sincronizaci\u00f3n completada: ${finalCount} productos, ${finalPrices} precios`);
 
     } catch (error) {
         logError(`Error en la sincronización: ${error.message}`);

@@ -31,6 +31,9 @@ app.use(express.urlencoded({ extended: true }));
 // });
 
 // Rutas de API (deben ir antes de los archivos estáticos)
+const { authMiddleware } = require('./middleware/auth');
+const authRoutes = require('./routes/auth');
+const usuariosRoutes = require('./routes/usuarios');
 const productosRoutes = require('./routes/productos');
 const pedidosRoutes = require('./routes/pedidos');
 const rotacionRoutes = require('./routes/rotacion');
@@ -44,8 +47,17 @@ const notificationsRoutes = require('./routes/notifications');
 const comprasHistorialRoutes = require('./routes/comprasHistorial');
 const margenesRoutes = require('./routes/margenes.routes');
 const { ejecutarAlertaStockBajo } = require('./scripts/alertaStockBajo');
+const { seedDefaultUser } = require('./scripts/seedDefaultUser');
 const { syncYesterday: syncComprasYesterday } = require('./scripts/syncCompras');
 
+// Rutas públicas (sin autenticación)
+app.use('/api/auth', authRoutes);
+
+// Proteger todas las rutas /api/* con JWT (excepto /api/auth)
+app.use('/api', authMiddleware);
+
+// Rutas protegidas
+app.use('/api/usuarios', usuariosRoutes);
 app.use('/api/productos', productosRoutes);
 app.use('/api/pedidos', pedidosRoutes);
 app.use('/api/rotacion', rotacionRoutes);
@@ -167,6 +179,9 @@ async function startServer() {
     const prisma = getPrismaClient();
 
     try {
+        // Seed usuario por defecto
+        await seedDefaultUser();
+
         // Verificar rotación antes de iniciar
         await verificarRotacionInicial();
 
@@ -218,12 +233,10 @@ async function startServer() {
 
         const server = app.listen(PORT, () => {
             logSuccess(`🚀 Servidor iniciado en http://localhost:${PORT}`);
-            logInfo(`📊 API de Órdenes de Compra - AXAM`);
             if (isProduction) {
-                logInfo(`🌐 Frontend Next.js sirviendo en http://localhost:${PORT}`);
+                logInfo(`🌐 Frontend: http://localhost:${PORT}`);
             } else {
-                logInfo(`   API disponible en http://localhost:${PORT}/`);
-                logInfo(`   Frontend dev server: cd client && npm run dev`);
+                logInfo(`🌐 API: http://localhost:${PORT} | Frontend Dev: cd client && npm run dev`);
             }
         });
 
