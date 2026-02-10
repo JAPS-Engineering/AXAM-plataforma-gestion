@@ -22,22 +22,24 @@ rm -rf prisma/data/*
 mkdir -p data
 
 # ============================================
-# Paso 3: Crear BD con Prisma (sin migraciones)
+# Paso 3: Construir imagen y Crear BD
 # ============================================
-echo "🛠️  [3/6] Creando base de datos con Prisma..."
+echo "🏗️  [3/6] Construyendo imagen Docker..."
+docker-compose build --no-cache
+
+echo "🛠️  Creando base de datos con Prisma..."
 docker-compose run --rm --entrypoint "npx prisma db push --force-reset --accept-data-loss" axam-dashboard
 
 echo "🔓 Ajustando permisos de la base de datos..."
 sudo chmod -R 777 data/
 
 # ============================================
-# Paso 4: Limpiar y levantar servicios
+# Paso 4: Levantar servicios
 # ============================================
 echo "🧹 Limpiando recursos de red..."
 docker-compose down
 
-echo "🏗️  [4/6] Construyendo y levantando servicios..."
-docker-compose build --no-cache
+echo "🚀 [4/6] Levantando servicios..."
 docker-compose up -d
 
 # Esperar a que el servidor esté listo
@@ -61,7 +63,7 @@ echo ""
 
 # Sincronizar productos
 echo "   📦 Sincronizando productos..."
-docker-compose exec -T axam-dashboard node scripts/syncDaily.js products
+docker-compose exec -T axam-dashboard node scripts/syncProductos.js
 echo "   ✅ Productos sincronizados"
 
 # Sincronizar ventas históricas (desde 2021)

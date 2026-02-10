@@ -336,10 +336,10 @@ export default function OcsOcisPage() {
     // Identify pending items for export
     const pendingItems = data.filter(i => (i.compraRealizar || 0) > 0);
     const hasTork = pendingItems.some(i => i.producto.sku.startsWith("T-"));
-    const hasKC = pendingItems.some(i => !i.producto.sku.startsWith("T-"));
+    const hasKC = pendingItems.some(i => i.producto.sku.startsWith("KC"));
 
     const handleExportKC = () => {
-        const items = pendingItems.filter(i => !i.producto.sku.startsWith("T-"));
+        const items = pendingItems.filter(i => i.producto.sku.startsWith("KC"));
         if (items.length === 0) return;
 
         // Format: 302 + last 5 digits of SKU, Quantity, CJ
@@ -394,11 +394,13 @@ export default function OcsOcisPage() {
         }
 
         setSendingOC(true);
-        // Cerrar modal de confirmación antes de empezar el proceso (que puede tener prompts)
+        // Cerrar modal de confirmación antes de empezar el proceso
         closeConfirmationModal();
-
-        // Pequeño delay para permitir que el modal cierre visualmente antes de posibles prompts
         await new Promise(resolve => setTimeout(resolve, 300));
+
+        const results: string[] = [];
+        let successCount = 0;
+        let errorCount = 0;
 
         try {
             for (const [rut, groupItems] of groups.entries()) {
@@ -408,10 +410,16 @@ export default function OcsOcisPage() {
                 // 2. Si es PENDIENTE, preguntar al usuario
                 if (currentRut === "PENDIENTE") {
                     const resNombre = prompt(`El producto ${groupItems[0].producto.sku} no tiene proveedor. Ingrese nombre:`);
-                    if (resNombre === null) continue; // Cancelado por usuario para este grupo
+                    if (resNombre === null) {
+                        results.push(`⚠️ Grupo PENDIENTE: Cancelado por usuario.`);
+                        continue;
+                    }
 
                     const resRut = prompt(`Ingrese RUT para el proveedor "${resNombre}" (ej: 12345678-9):`, "96604460-8");
-                    if (resRut === null) continue;
+                    if (resRut === null) {
+                        results.push(`⚠️ ${resNombre}: Cancelado por usuario (sin RUT).`);
+                        continue;
+                    }
 
                     currentNombre = resNombre;
                     currentRut = resRut;
@@ -420,7 +428,6 @@ export default function OcsOcisPage() {
                     for (const item of groupItems) {
                         try {
                             await updateProductProvider(item.producto.id, currentNombre, currentRut);
-                            // Actualizar estado local
                             item.producto.proveedor = currentNombre;
                             item.producto.rutProveedor = currentRut;
                         } catch (err) {
@@ -452,27 +459,42 @@ export default function OcsOcisPage() {
                 });
 
                 const result = await res.json();
+
                 if (result.success) {
-                    console.log(`OC ${result.data?.mensaje?.[1]} creada para ${currentNombre}`);
+                    const msg = `✅ ${currentNombre}: OC Generada (${result.data?.mensaje?.[1] || "OK"})`;
+                    console.log(msg);
+                    results.push(msg);
+                    successCount++;
                 } else {
-                    // Usar un modal intermedio podría ser molesto en loop, pero para errores graves sí
-                    // Para no bloquear el loop con modales asíncronos que requieren interacción,
-                    // acumulamos errores o usamos alert (que el usuario quería evitar, pero es el único sincrónico)
-                    // OJO: El usuario pidió "no pop up tipo alerta".
-                    // Si falla, quizás es mejor mostrar un modal de error AL FINAL con el resumen, o detener el proceso.
-                    // Por simplicidad en este refactor, mostraremos modal y PENDREMOS que el usuario le de OK.
-                    // Pero como showModal no es bloqueante (no retorna Promise), no podemos esperar.
-                    // Solución: Usar alert solo para errores críticos dentro del loop o confiar en el log, 
-                    // y al final mostrar resumen.
-                    console.error(`Error creando OC para ${currentNombre}:`, result.message);
+                    let errorDetail = result.message;
+                    // Intento de parsear mensaje de error complejo de Manager+
+                    if (typeof result.message === 'object') {
+                        try {
+                            // Ejemplo format: {"00001":["Error A", "Error B"]}
+                            const errors = Object.values(result.message).flat().join(". ");
+                            errorDetail = errors || JSON.stringify(result.message);
+                        } catch (e) {
+                            errorDetail = JSON.stringify(result.message);
+                        }
+                    }
+
+                    const msg = `❌ ${currentNombre}: Error - ${errorDetail}`;
+                    console.error(msg);
+                    results.push(msg);
+                    errorCount++;
                 }
             }
 
-            showModal("Proceso Finalizado", "El proceso de envío de Órdenes de Compra ha finalizado.", "success");
-            fetchData(); // Refrescar para limpiar los enviados
+            // Mostrar resumen final
+            const summaryTitle = errorCount === 0 ? "Proceso Finalizado con Éxito" : "Resumen del Proceso";
+            const summaryType = errorCount === 0 ? "success" : (successCount === 0 ? "error" : "warning");
+
+            showModal(summaryTitle, results.join("\n\n"), summaryType);
+            fetchData();
+
         } catch (error) {
             console.error(error);
-            showModal("Error", "Ocurrió un error de conexión al enviar OC.", "error");
+            showModal("Error Crítico", "Ocurrió un error inesperado de conexión.", "error");
         } finally {
             setSendingOC(false);
         }
@@ -514,6 +536,10 @@ export default function OcsOcisPage() {
         closeConfirmationModal();
         await new Promise(resolve => setTimeout(resolve, 300));
 
+        const results: string[] = [];
+        let successCount = 0;
+        let errorCount = 0;
+
         try {
             for (const [rut, groupItems] of groups.entries()) {
                 let currentRut = rut;
@@ -521,10 +547,16 @@ export default function OcsOcisPage() {
 
                 if (currentRut === "PENDIENTE") {
                     const resNombre = prompt(`El producto ${groupItems[0].producto.sku} no tiene proveedor. Ingrese nombre:`);
-                    if (resNombre === null) continue;
+                    if (resNombre === null) {
+                        results.push(`⚠️ Grupo PENDIENTE: Cancelado por usuario.`);
+                        continue;
+                    }
 
                     const resRut = prompt(`Ingrese RUT para el proveedor "${resNombre}" (ej: 12345678-9):`, "96604460-8");
-                    if (resRut === null) continue;
+                    if (resRut === null) {
+                        results.push(`⚠️ ${resNombre}: Cancelado por usuario (sin RUT).`);
+                        continue;
+                    }
 
                     currentNombre = resNombre;
                     currentRut = resRut;
@@ -564,17 +596,39 @@ export default function OcsOcisPage() {
                 });
 
                 const result = await res.json();
+
                 if (result.success) {
-                    console.log(`OCI ${result.data?.mensaje?.[1]} creada para ${currentNombre}`);
+                    const msg = `✅ ${currentNombre}: OCI Generada (${result.data?.mensaje?.[1] || "OK"})`;
+                    console.log(msg);
+                    results.push(msg);
+                    successCount++;
                 } else {
-                    console.error(`Error creando OCI para ${currentNombre}:`, result.message);
+                    let errorDetail = result.message;
+                    if (typeof result.message === 'object') {
+                        try {
+                            const errors = Object.values(result.message).flat().join(". ");
+                            errorDetail = errors || JSON.stringify(result.message);
+                        } catch (e) {
+                            errorDetail = JSON.stringify(result.message);
+                        }
+                    }
+
+                    const msg = `❌ ${currentNombre}: Error - ${errorDetail}`;
+                    console.error(msg);
+                    results.push(msg);
+                    errorCount++;
                 }
             }
-            showModal("Proceso Finalizado", "El proceso de envío de Órdenes de Importación ha finalizado.", "success");
+
+            // Mostrar resumen
+            const summaryTitle = errorCount === 0 ? "Proceso Finalizado con Éxito" : "Resumen del Proceso";
+            const summaryType = errorCount === 0 ? "success" : (successCount === 0 ? "error" : "warning");
+
+            showModal(summaryTitle, results.join("\n\n"), summaryType);
             fetchData();
         } catch (error) {
             console.error(error);
-            showModal("Error", "Ocurrió un error de conexión al enviar OCI.", "error");
+            showModal("Error Crítico", "Ocurrió un error inesperado de conexión.", "error");
         } finally {
             setSendingOCI(false);
         }

@@ -6,7 +6,7 @@
  */
 
 const axios = require('axios');
-const { format, addDays } = require('date-fns');
+const { format, addDays, differenceInDays } = require('date-fns');
 const { getAuthHeaders } = require('../utils/auth');
 const { logInfo, logSuccess, logError, logWarning } = require('../utils/logger');
 
@@ -53,9 +53,26 @@ async function getDocumentsByType(docType, fechaInicio, fechaFin, attempt = 1) {
             error.code === 'ETIMEDOUT' ||
             (error.message && error.message.includes('socket hang up'));
 
-        if (attempt <= maxAttempts && (isNetworkError || error.response?.status === 429)) {
+        // Fallback Strategy: Si es error 500 o Timeout en un rango grande (> 5 días), dividir y conquistar
+        const daysDiff = differenceInDays(fechaFin, fechaInicio);
+        if (daysDiff > 5 && (error.response?.status === 500 || isNetworkError || error.code === 'ECONNABORTED')) {
+            logWarning(`⚠️  ${docType}: Error ${error.response?.status || error.code} en rango de ${daysDiff} días. Dividiendo consulta...`);
 
-            const reason = isNetworkError ? `Error de red (${error.code || error.message})` : 'Rate limit';
+            // Calcular punto medio
+            const midDate = addDays(fechaInicio, Math.floor(daysDiff / 2));
+
+            // Primera mitad: Inicio -> Mid
+            const part1 = await getDocumentsByType(docType, fechaInicio, midDate, 1);
+
+            // Segunda mitad: Mid+1 -> Fin
+            const part2 = await getDocumentsByType(docType, addDays(midDate, 1), fechaFin, 1);
+
+            return [...part1, ...part2];
+        }
+
+        if (attempt <= maxAttempts && (isNetworkError || error.response?.status === 429 || error.response?.status >= 500)) {
+
+            const reason = isNetworkError ? `Error de red (${error.code || error.message})` : `HTTP ${error.response?.status}`;
             logWarning(`⚠️  ${docType}: ${reason}. Reintentando intento ${attempt}/${maxAttempts} en ${retryDelay / 1000}s...`);
 
             await new Promise(resolve => setTimeout(resolve, retryDelay));
