@@ -58,9 +58,9 @@ async function syncNewProducts() {
         existingProducts.forEach(p => existingMap.set(p.sku, p));
 
 
-
         const updates = [];
         const creates = [];
+        const processedInBatch = new Set();
 
         // 3. Comparar y preparar operaciones
         for (const product of productsToProcess) {
@@ -70,6 +70,10 @@ async function syncNewProducts() {
             const proveedor = (product.proveedor || product.nombre_proveedor || '').trim();
 
             if (!sku || !descripcion) continue;
+
+            // Deduplicación: Si ya procesamos este SKU en este batch del ERP, lo saltamos
+            if (processedInBatch.has(sku)) continue;
+            processedInBatch.add(sku);
 
             const existing = existingMap.get(sku);
 

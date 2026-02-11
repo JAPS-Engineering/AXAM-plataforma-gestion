@@ -25,33 +25,48 @@ const TARGET_LISTS = ['89', '652', '386'];
 /**
  * Obtener todos los productos de Manager+
  */
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 2000;
+
+async function wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Obtener todos los productos de Manager+ (con reintentos)
+ */
 async function getAllProducts() {
-    try {
+    let lastError;
 
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            if (attempt > 1) logInfo(`🔄 Intento ${attempt}/${MAX_RETRIES} obteniendo productos...`);
 
-        const headers = await getAuthHeaders();
-        const url = `${ERP_BASE_URL}/products/${RUT_EMPRESA}?con_stock=S&con_listaprecios=S&pic=1`;
+            const headers = await getAuthHeaders();
+            const url = `${ERP_BASE_URL}/products/${RUT_EMPRESA}?con_stock=S&con_listaprecios=S&pic=1`;
 
+            const response = await axios.get(url, { headers });
+            const products = response.data.data || response.data || [];
 
-
-        const response = await axios.get(url, { headers });
-
-        const products = response.data.data || response.data || [];
-
-        if (!Array.isArray(products)) {
-            if (typeof products === 'object' && products !== null) {
-                return [products];
+            if (!Array.isArray(products)) {
+                if (typeof products === 'object' && products !== null) return [products];
+                return [];
             }
-            return [];
+
+            return products;
+
+        } catch (error) {
+            lastError = error;
+            const status = error.response ? error.response.status : 'unknown';
+            logWarning(`⚠️ Error intento ${attempt} (Status: ${status}): ${error.message}`);
+
+            if (attempt < MAX_RETRIES) await wait(RETRY_DELAY);
         }
-
-        return products;
-
-    } catch (error) {
-        const msg = (error.response && error.response.data && error.response.data.message) || error.message;
-        logError(`Error al obtener productos: ${msg}`);
-        throw error;
     }
+
+    const msg = (lastError.response && lastError.response.data && lastError.response.data.message) || lastError.message;
+    logError(`❌ Error fatal tras ${MAX_RETRIES} intentos: ${msg}`);
+    throw lastError;
 }
 
 /**
