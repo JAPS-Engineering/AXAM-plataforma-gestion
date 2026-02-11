@@ -302,7 +302,7 @@ async function syncInitial(months = 12) {
             totalProcessed += processed;
             totalUpdated += updated;
         } catch (error) {
-            logError(`Error en ${month}/${year}: ${error.message}`);
+            logError(`⚠️ Error en mes ${month}/${year} (syncInitial Compras): ${error.message}. Saltando...`);
         }
 
         // Pequeña pausa entre meses para no saturar API
@@ -340,7 +340,7 @@ async function syncFull2021() {
                 totalProcessed += processed;
                 totalUpdated += updated;
             } catch (error) {
-                logError(`Error en ${month}/${year}: ${error.message}`);
+                logError(`⚠️ Error en mes ${month}/${year} (syncFull2021 Compras): ${error.message}. Saltando...`);
             }
 
             // Pausa entre meses
