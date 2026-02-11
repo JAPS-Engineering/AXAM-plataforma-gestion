@@ -108,6 +108,8 @@ async function rotarVentasActualesAHistoricas() {
                     logError(`Error al rotar venta del producto ${ventaActual.productoId} vendedor ${ventaActual.vendedor}: ${error.message}`);
                 }
             }
+        }, {
+            timeout: 60000 // 60 segundos para manejar grandes volúmenes de datos
         });
 
         logSuccess(`Rotación completada: ${rotadas} ventas rotadas, ${errores} errores`);
