@@ -5,6 +5,7 @@ import { AlertTriangle, Save, Search, X, Mail, Plus, Trash2, Send, Bell } from "
 import { Sidebar } from "@/components/sidebar";
 import { Pagination } from "@/components/pagination";
 import { SortButton } from "@/components/sort-button";
+import { api } from "@/lib/api";
 
 interface Producto {
     id: number;
@@ -54,14 +55,15 @@ export default function MinimosPage() {
         setLoading(true);
         try {
             const effectivePageSize = pageSize === -1 ? 10000 : pageSize;
-            const params = new URLSearchParams({
-                page: page.toString(),
-                pageSize: effectivePageSize.toString(),
-                search,
-                filter,
+            const res = await api.get("/productos/minimos", {
+                params: {
+                    page,
+                    pageSize: effectivePageSize,
+                    search,
+                    filter
+                }
             });
-            const res = await fetch(`/api/productos/minimos?${params}`);
-            const data = await res.json();
+            const data = res.data;
             setProductos(data.productos);
             setTotalPages(data.totalPages);
             setTotalItems(data.totalItems || data.productos.length);
@@ -75,8 +77,8 @@ export default function MinimosPage() {
     const fetchEmails = useCallback(async () => {
         setLoadingEmails(true);
         try {
-            const res = await fetch('/api/notifications/emails');
-            const data = await res.json();
+            const res = await api.get('/notifications/emails');
+            const data = res.data;
             setEmails(data.emails || []);
         } catch (error) {
             console.error("Error fetching emails:", error);
@@ -124,13 +126,9 @@ export default function MinimosPage() {
         try {
             const stockMinimo = editValue.trim() === "" ? null : parseFloat(editValue);
 
-            const res = await fetch(`/api/productos/${producto.id}/minimo`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ stockMinimo }),
-            });
+            const res = await api.patch(`/productos/${producto.id}/minimo`, { stockMinimo });
 
-            if (res.ok) {
+            if (res.status === 200 || res.status === 204) {
                 setProductos((prev) =>
                     prev.map((p) =>
                         p.id === producto.id ? { ...p, stockMinimo } : p
@@ -175,15 +173,10 @@ export default function MinimosPage() {
 
         setAddingEmail(true);
         try {
-            const res = await fetch('/api/notifications/emails', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: newEmail.trim() })
-            });
+            const res = await api.post('/notifications/emails', { email: newEmail.trim() });
+            const data = res.data;
 
-            const data = await res.json();
-
-            if (res.ok) {
+            if (res.status === 200 || res.status === 201) {
                 setEmails(prev => [data.email, ...prev]);
                 setNewEmail('');
                 setSuccessMessage('Email agregado correctamente');
@@ -201,15 +194,13 @@ export default function MinimosPage() {
     const handleDeleteEmail = async (email: string) => {
         setDeletingEmail(email);
         try {
-            const res = await fetch(`/api/notifications/emails/${encodeURIComponent(email)}`, {
-                method: 'DELETE'
-            });
+            const res = await api.delete(`/notifications/emails/${encodeURIComponent(email)}`);
 
-            if (res.ok) {
+            if (res.status === 200 || res.status === 204) {
                 setEmails(prev => prev.filter(e => e.email !== email));
                 setSuccessMessage('Email eliminado');
             } else {
-                const data = await res.json();
+                const data = res.data;
                 setErrorMessage(data.error || 'Error al eliminar email');
             }
         } catch (error) {
@@ -223,15 +214,10 @@ export default function MinimosPage() {
     const handleSendTest = async (email: string) => {
         setSendingTest(true);
         try {
-            const res = await fetch('/api/notifications/test', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email })
-            });
+            const res = await api.post('/notifications/test', { email });
+            const data = res.data;
 
-            const data = await res.json();
-
-            if (res.ok) {
+            if (res.status === 200) {
                 setSuccessMessage(`Email de prueba enviado a ${email}`);
             } else {
                 setErrorMessage(data.error || 'Error al enviar email de prueba');

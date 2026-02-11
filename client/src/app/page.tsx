@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchDashboard, resetOrders, syncProductsApi } from "@/lib/api";
+import { fetchDashboard, resetOrders, syncProductsApi, api } from "@/lib/api";
 import { Sidebar } from "@/components/sidebar";
 import { Header } from "@/components/header";
 import { KPICard } from "@/components/kpi-card";
@@ -94,16 +94,8 @@ export default function DashboardPage() {
       cantidadSugerida: p.compraRealizar
     }));
 
-    const res = await fetch("/api/purchase/export/csv", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${localStorage.getItem("axam_token")}`
-      },
-      body: JSON.stringify({ items })
-    });
-
-    const blob = await res.blob();
+    const res = await api.post("/purchase/export/csv", { items }, { responseType: 'blob' });
+    const blob = res.data;
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -121,16 +113,8 @@ export default function DashboardPage() {
       cantidadSugerida: p.compraRealizar
     }));
 
-    const res = await fetch("/api/purchase/export/tork-txt", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${localStorage.getItem("axam_token")}`
-      },
-      body: JSON.stringify({ items })
-    });
-
-    const blob = await res.blob();
+    const res = await api.post("/purchase/export/tork-txt", { items }, { responseType: 'blob' });
+    const blob = res.data;
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;

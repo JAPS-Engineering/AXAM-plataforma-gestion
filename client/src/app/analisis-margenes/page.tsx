@@ -9,6 +9,7 @@ import {
     Percent,
     Search
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 // Helper Functions
 const formatCLP = (amount: number) => {
@@ -30,15 +31,8 @@ const formatPercent = (value: number) => {
 
 // API Fetcher
 async function fetchMargenes(params: Record<string, string | number | undefined>) {
-    const searchParams = new URLSearchParams();
-    Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== "") {
-            searchParams.set(key, String(value));
-        }
-    });
-    const res = await fetch(`/api/margenes?${searchParams}`);
-    if (!res.ok) throw new Error("Error al obtener márgenes");
-    return res.json();
+    const res = await api.get("/margenes", { params });
+    return res.data;
 }
 
 interface ProductoMargen {

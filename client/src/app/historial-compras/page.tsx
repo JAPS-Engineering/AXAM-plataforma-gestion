@@ -19,6 +19,7 @@ import {
     BarChart3,
     Table as TableIcon
 } from "lucide-react";
+import { api } from "@/lib/api";
 import { PurchaseCharts } from "./components/purchase-charts";
 import {
     LineChart,
@@ -52,36 +53,23 @@ const formatDate = (dateStr: string) => {
 
 // API functions
 async function fetchComprasHistorico(params: Record<string, string | number | undefined>) {
-    const searchParams = new URLSearchParams();
-    Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== "") {
-            searchParams.set(key, String(value));
-        }
-    });
-    const res = await fetch(`/api/compras/historico?${searchParams}`);
-    if (!res.ok) throw new Error("Error al obtener historial de compras");
-    return res.json();
+    const res = await api.get("/compras/historico", { params });
+    return res.data;
 }
 
 async function fetchComprasStats(origen?: string) {
-    const searchParams = new URLSearchParams();
-    if (origen) searchParams.set("origen", origen);
-    const res = await fetch(`/api/compras/stats?${searchParams}`);
-    if (!res.ok) throw new Error("Error al obtener estadísticas");
-    return res.json();
+    const res = await api.get("/compras/stats", { params: { origen } });
+    return res.data;
 }
 
 async function fetchComprasResumen(params: { fechaInicio: string; fechaFin: string; origen?: string }) {
-    const searchParams = new URLSearchParams(params as any);
-    const res = await fetch(`/api/compras/resumen?${searchParams}`);
-    if (!res.ok) throw new Error("Error al obtener resumen");
-    return res.json();
+    const res = await api.get("/compras/resumen", { params });
+    return res.data;
 }
 
 async function fetchProductoEvolucion(sku: string) {
-    const res = await fetch(`/api/compras/productos/${encodeURIComponent(sku)}/evolucion`);
-    if (!res.ok) throw new Error("Error al obtener evolución");
-    return res.json();
+    const res = await api.get(`/compras/productos/${encodeURIComponent(sku)}/evolucion`);
+    return res.data;
 }
 
 interface CompraHistorica {

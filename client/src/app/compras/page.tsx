@@ -23,6 +23,7 @@ import {
 import { PendingShipmentsSync } from "@/components/pending-shipments-sync";
 import { cn } from "@/lib/utils";
 import { OrderCell } from "@/components/order-cell";
+import { api } from "@/lib/api";
 
 interface SuggestedPurchase {
     id: number;
@@ -164,12 +165,14 @@ export default function AnalisisPage() {
     useEffect(() => {
         async function loadProveedores() {
             try {
-                const res = await fetch("/api/purchase/proveedores");
-                const json = await res.json();
-                setProveedores(json.proveedores || []);
-                setTipoFiltro(json.tipo || "familia");
-                if (json.proveedores?.length > 0) {
-                    setProveedorSeleccionado(json.proveedores[0].nombre);
+                const res = await api.get("/purchase/proveedores");
+                const data = res.data;
+                if (data.success) {
+                    setProveedores(data.data || []);
+                    setTipoFiltro(data.tipo || "familia");
+                    if (data.data?.length > 0) {
+                        setProveedorSeleccionado(data.data[0].nombre);
+                    }
                 }
             } catch (err) {
                 console.error("Error loading proveedores:", err);
@@ -216,11 +219,10 @@ export default function AnalisisPage() {
                 frequency
             });
 
-            const res = await fetch(`/api/purchase/suggested?${params}`);
-            if (!res.ok) throw new Error("Error al obtener análisis");
+            const res = await api.get(`/purchase/suggested?${params}`);
+            if (!res.data) throw new Error("Error al obtener análisis");
 
-            const json = await res.json();
-            setData(json);
+            setData(res.data);
         } catch (err) {
             setError((err as Error).message);
         } finally {
@@ -304,18 +306,16 @@ export default function AnalisisPage() {
     const handleSaveCompra = async (productoId: number, cantidad: number, tipo: string) => {
         setSavingId(productoId);
         try {
-            await fetch("/api/dashboard/orden", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    items: [{ productoId, cantidad, tipo }]
-                })
+            const res = await api.post("/purchase/save-compra", {
+                productoId,
+                cantidad,
+                tipo
             });
-
+            const data = res.data; // Assuming the API returns the updated SuggestedPurchaseResponse or similar
             if (data) {
                 setData({
                     ...data,
-                    items: data.items.map(i =>
+                    items: data.items.map((i: SuggestedPurchase) =>
                         i.id === productoId ? { ...i, compraRealizar: cantidad, tipoCompra: tipo } : i
                     )
                 });

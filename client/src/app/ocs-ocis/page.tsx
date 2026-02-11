@@ -7,6 +7,7 @@ import { ProductoDashboard, saveOrders, updateProductProvider } from "@/lib/api"
 import { cn } from "@/lib/utils";
 import { Sidebar } from "@/components/sidebar";
 import { Header } from "@/components/header";
+import { api } from "@/lib/api";
 
 import { Pagination } from "@/components/pagination";
 import { SortButton, SortConfig, SortColumn } from "@/components/product-table";
@@ -183,6 +184,7 @@ import { ConfirmationModal } from "@/components/confirmation-modal";
 
 const getDollarObserved = async (): Promise<number | null> => {
     try {
+        // This is an external API, skip authenticated 'api' and use native fetch
         const res = await fetch("https://mindicador.cl/api");
         if (!res.ok) throw new Error("Error fetching mindicador.cl");
         const data = await res.json();
@@ -236,20 +238,22 @@ export default function OcsOcisPage() {
         });
     };
 
-    const fetchData = () => {
+    const fetchData = async () => {
         setLoading(true);
-        fetch("/api/dashboard?live=false")
-            .then(res => res.json())
-            .then(resData => {
-                const items: ProductoDashboard[] = resData.productos || [];
-                const pending = items.filter(i => (i.compraRealizar || 0) > 0);
-                setData(pending);
-                if (resData.meta?.lastUpdate) {
-                    setLastUpdate(resData.meta.lastUpdate);
-                }
-            })
-            .catch(err => { /* console.error(err) */ })
-            .finally(() => setLoading(false));
+        try {
+            const res = await api.get("/dashboard", { params: { live: false } });
+            const resData = res.data;
+            const items: ProductoDashboard[] = resData.productos || [];
+            const pending = items.filter(i => (i.compraRealizar || 0) > 0);
+            setData(pending);
+            if (resData.meta?.lastUpdate) {
+                setLastUpdate(resData.meta.lastUpdate);
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
     };
 
     useEffect(() => {
@@ -464,13 +468,8 @@ export default function OcsOcisPage() {
                     observaciones: "Generado desde Plataforma de Gestión AXAM"
                 };
 
-                const res = await fetch("/api/purchase/manager/oc", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload)
-                });
-
-                const result = await res.json();
+                const res = await api.post("/purchase/manager/oc", payload);
+                const result = res.data;
 
                 if (result.success) {
                     const msg = `✅ ${currentNombre}: OC Generada (${result.data?.mensaje?.[1] || "OK"})`;
@@ -639,13 +638,8 @@ export default function OcsOcisPage() {
                     observaciones: "Generado desde Plataforma de Gestión AXAM (Importación)"
                 };
 
-                const res = await fetch("/api/purchase/manager/oci", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload)
-                });
-
-                const result = await res.json();
+                const res = await api.post("/purchase/manager/oci", payload);
+                const result = res.data;
 
                 if (result.success) {
                     const msg = `✅ ${currentNombre}: OCI Generada (${result.data?.mensaje?.[1] || "OK"})`;

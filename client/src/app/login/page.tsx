@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Package2, Lock, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { api } from "@/lib/api";
 
 export default function LoginPage() {
     const [username, setUsername] = useState("");
@@ -16,16 +17,10 @@ export default function LoginPage() {
         setIsLoading(true);
 
         try {
-            const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
-            const res = await fetch(`${API_BASE_URL}/auth/login`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ username, password }),
-            });
+            const res = await api.post("/auth/login", { username, password });
+            const data = res.data;
 
-            const data = await res.json();
-
-            if (!res.ok) {
+            if (res.status !== 200) {
                 setError(data.error || "Error al iniciar sesión");
                 return;
             }

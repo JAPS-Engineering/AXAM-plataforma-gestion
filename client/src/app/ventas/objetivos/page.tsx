@@ -11,6 +11,7 @@ import { RankingVendedoresChart } from "@/components/ventas/RankingVendedoresCha
 import { MarketShareChart } from "@/components/ventas/MarketShareChart";
 import { ResumenMesActualTable } from "@/components/ventas/ResumenMesActualTable";
 import { cn } from "@/lib/utils";
+import { api } from "@/lib/api";
 
 // Helpers for dates (Backend uses unpadded months e.g. "2024-1")
 const getCurrentMonth = () => {
@@ -121,21 +122,17 @@ export default function ObjetivosPage() {
     const fetchData = useCallback(async () => {
         try {
             setLoading(true);
-            const baseUrl = process.env.NEXT_PUBLIC_API_URL || '/api';
-            let url = `${baseUrl}/targets/ventas`;
-
+            const queryParams = new URLSearchParams();
             if (periodMode === "preset") {
-                url += `?meses=${meses}`;
+                queryParams.append("meses", meses.toString());
             } else {
-                url += `?start=${customRange.start}&end=${customRange.end}`;
+                queryParams.append("start", customRange.start);
+                queryParams.append("end", customRange.end);
             }
+            queryParams.append("futureMonths", futureRange.toString());
 
-            // Append future range param
-            url += `&futureMonths=${futureRange}`;
-
-            const res = await fetch(url);
-            if (!res.ok) throw new Error("Error al cargar datos desde el servidor");
-            const jsonData = await res.json();
+            const res = await api.get(`/targets/ventas?${queryParams.toString()}`);
+            const jsonData = res.data;
 
             setData(jsonData);
             // Default select the latest month available
@@ -160,14 +157,7 @@ export default function ObjetivosPage() {
                 ? { tipo: "VENDEDOR", entidadId: vendedor, ano, mes, montoObjetivo: monto }
                 : { vendedorId: vendedor, ano, mes, montoPropongo: monto };
 
-            const baseUrl = process.env.NEXT_PUBLIC_API_URL || '/api';
-            const res = await fetch(`${baseUrl}${endpoint}`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(body),
-            });
-
-            if (!res.ok) throw new Error("Error al guardar");
+            const res = await api.post(endpoint, body);
 
             setData(prev => {
                 if (!prev) return prev;
