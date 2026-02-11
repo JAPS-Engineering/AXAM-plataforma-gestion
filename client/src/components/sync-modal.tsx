@@ -63,17 +63,8 @@ export function SyncModal({ isOpen, onClose }: SyncModalProps) {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api";
 
         // Determinar URL del stream
-        // En desarrollo local, conectamos directo al backend (puerto 3000) para evitar 
-        // que el proxy de Next.js (puerto 3001) bufferee la respuesta SSE.
         const token = typeof window !== "undefined" ? localStorage.getItem("axam_token") : null;
         let streamUrl = `${apiUrl}/dashboard/sync-stream`;
-
-        if (process.env.NODE_ENV === "development" &&
-            typeof window !== "undefined" &&
-            window.location.hostname === "localhost" &&
-            window.location.port !== "3000") {
-            streamUrl = "http://localhost:3000/api/dashboard/sync-stream";
-        }
 
         // Adjuntar token si existe
         if (token) {
@@ -171,8 +162,14 @@ export function SyncModal({ isOpen, onClose }: SyncModalProps) {
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="w-full max-w-md bg-white rounded-xl shadow-2xl p-6 m-4 animate-in zoom-in-95 duration-200 border border-slate-200">
+        <div className={cn(
+            "fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm transition-opacity duration-200",
+            isOpen ? "opacity-100" : "opacity-0"
+        )}>
+            <div className={cn(
+                "w-full max-w-md bg-white rounded-xl shadow-2xl p-6 m-4 border border-slate-200 transform transition-all duration-200",
+                isOpen ? "scale-100 opacity-100" : "scale-95 opacity-0"
+            )}>
 
                 <div className="flex items-center justify-between mb-6">
                     <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
