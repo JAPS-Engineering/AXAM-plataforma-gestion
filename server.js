@@ -53,8 +53,14 @@ const { syncYesterday: syncComprasYesterday } = require('./scripts/syncCompras')
 // Rutas públicas (sin autenticación)
 app.use('/api/auth', authRoutes);
 
-// Proteger todas las rutas /api/* con JWT (excepto /api/auth)
-app.use('/api', authMiddleware);
+// Proteger todas las rutas /api/* con JWT (excepto /api/auth y /api/sync/pendientes)
+app.use('/api', (req, res, next) => {
+    // El endpoint de sincronización de pendientes desde el worker debe ser público
+    if (req.path === '/sync/pendientes' && req.method === 'POST') {
+        return next();
+    }
+    authMiddleware(req, res, next);
+});
 
 // Rutas protegidas
 app.use('/api/usuarios', usuariosRoutes);
