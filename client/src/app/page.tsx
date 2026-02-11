@@ -96,7 +96,10 @@ export default function DashboardPage() {
 
     const res = await fetch("/api/purchase/export/csv", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${localStorage.getItem("axam_token")}`
+      },
       body: JSON.stringify({ items })
     });
 
@@ -120,7 +123,10 @@ export default function DashboardPage() {
 
     const res = await fetch("/api/purchase/export/tork-txt", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${localStorage.getItem("axam_token")}`
+      },
       body: JSON.stringify({ items })
     });
 

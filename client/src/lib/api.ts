@@ -12,6 +12,17 @@ export const api = axios.create({
     timeout: 300000,
 });
 
+// Interceptor para adjuntar el token de forma estática (evita condiciones de carrera en React)
+api.interceptors.request.use((config) => {
+    if (typeof window !== "undefined") {
+        const token = localStorage.getItem("axam_token");
+        if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
+        }
+    }
+    return config;
+});
+
 // Types
 export interface ProductoInfo {
     id: number;

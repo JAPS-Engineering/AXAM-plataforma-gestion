@@ -60,37 +60,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
     }, []);
 
-    // Setup axios interceptor for auto-attaching token
-    useEffect(() => {
-        const requestInterceptor = api.interceptors.request.use((config) => {
-            const currentToken = localStorage.getItem("axam_token");
-            if (currentToken) {
-                config.headers.Authorization = `Bearer ${currentToken}`;
-            }
-            return config;
-        });
-
-        const responseInterceptor = api.interceptors.response.use(
-            (response) => response,
-            (error) => {
-                if (error.response?.status === 401) {
-                    localStorage.removeItem("axam_token");
-                    setToken(null);
-                    setUser(null);
-                    // Redirect to login if not already there
-                    if (typeof window !== "undefined" && !window.location.pathname.includes("/login")) {
-                        window.location.href = "/login";
-                    }
-                }
-                return Promise.reject(error);
-            }
-        );
-
-        return () => {
-            api.interceptors.request.eject(requestInterceptor);
-            api.interceptors.response.eject(responseInterceptor);
-        };
-    }, []);
 
     const login = useCallback(async (username: string, password: string) => {
         const { data } = await api.post("/auth/login", { username, password });

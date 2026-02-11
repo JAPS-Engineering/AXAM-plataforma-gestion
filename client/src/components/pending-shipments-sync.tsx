@@ -2,9 +2,15 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Database, ExternalLink, CheckCircle2, Loader2, AlertCircle, Sparkles, ArrowRight } from "lucide-react";
+import { api } from "@/lib/api";
 
 interface PendingShipmentsSyncProps {
     onPendientesLoaded: (data: Record<string, number>) => void;
+}
+
+interface PendientesResponse {
+    success: boolean;
+    data: Record<string, number>;
 }
 
 export function PendingShipmentsSync({ onPendientesLoaded }: PendingShipmentsSyncProps) {
@@ -16,8 +22,8 @@ export function PendingShipmentsSync({ onPendientesLoaded }: PendingShipmentsSyn
     useEffect(() => {
         const fetchCurrentPendientes = async () => {
             try {
-                const res = await fetch("/api/sync/pendientes-data"); // Necesitamos este endpoint
-                const json = await res.json();
+                const res = await api.get<PendientesResponse>("/sync/pendientes-data");
+                const json = res.data;
                 if (json.success && json.data) {
                     onPendientesLoaded(json.data);
                 }

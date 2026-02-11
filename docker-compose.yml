@@ -12,6 +12,7 @@ services:
       - TZ=America/Santiago
       - DATABASE_URL=${DATABASE_URL}
       - DB_PATH=${DB_PATH}
+      - JWT_SECRET=${JWT_SECRET}
       - ERP_BASE_URL=${ERP_BASE_URL}
       - ERP_USERNAME=${ERP_USERNAME}
       - ERP_PASSWORD=${ERP_PASSWORD}

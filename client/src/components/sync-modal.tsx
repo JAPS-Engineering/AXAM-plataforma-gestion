@@ -65,6 +65,7 @@ export function SyncModal({ isOpen, onClose }: SyncModalProps) {
         // Determinar URL del stream
         // En desarrollo local, conectamos directo al backend (puerto 3000) para evitar 
         // que el proxy de Next.js (puerto 3001) bufferee la respuesta SSE.
+        const token = typeof window !== "undefined" ? localStorage.getItem("axam_token") : null;
         let streamUrl = `${apiUrl}/dashboard/sync-stream`;
 
         if (process.env.NODE_ENV === "development" &&
@@ -72,6 +73,12 @@ export function SyncModal({ isOpen, onClose }: SyncModalProps) {
             window.location.hostname === "localhost" &&
             window.location.port !== "3000") {
             streamUrl = "http://localhost:3000/api/dashboard/sync-stream";
+        }
+
+        // Adjuntar token si existe
+        if (token) {
+            const separator = streamUrl.includes('?') ? '&' : '?';
+            streamUrl = `${streamUrl}${separator}token=${token}`;
         }
 
         console.log("Conectando SSE a:", streamUrl);
