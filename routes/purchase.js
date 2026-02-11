@@ -122,8 +122,13 @@ router.get('/proveedores', async (req, res) => {
         // Si hay proveedores válidos, devolverlos
         if (proveedoresFiltrados.length > 0) {
             return res.json({
+                success: true,
                 total: proveedoresFiltrados.length,
                 tipo: 'proveedor',
+                data: proveedoresFiltrados.map(p => ({
+                    nombre: p.proveedor,
+                    productosCount: p._count.id
+                })),
                 proveedores: proveedoresFiltrados.map(p => ({
                     nombre: p.proveedor,
                     productosCount: p._count.id
@@ -141,8 +146,13 @@ router.get('/proveedores', async (req, res) => {
         const familiasFiltradas = familias.filter(f => f.familia && f.familia.trim() !== '');
 
         res.json({
+            success: true,
             total: familiasFiltradas.length,
             tipo: 'familia',
+            data: familiasFiltradas.map(f => ({
+                nombre: f.familia,
+                productosCount: f._count.id
+            })),
             proveedores: familiasFiltradas.map(f => ({
                 nombre: f.familia,
                 productosCount: f._count.id

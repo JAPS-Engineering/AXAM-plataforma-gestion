@@ -167,12 +167,12 @@ export default function AnalisisPage() {
             try {
                 const res = await api.get("/purchase/proveedores");
                 const data = res.data;
-                if (data.success) {
-                    setProveedores(data.data || []);
-                    setTipoFiltro(data.tipo || "familia");
-                    if (data.data?.length > 0) {
-                        setProveedorSeleccionado(data.data[0].nombre);
-                    }
+                const items = data.data || data.proveedores || [];
+
+                setProveedores(items);
+                setTipoFiltro(data.tipo || "familia");
+                if (items.length > 0) {
+                    setProveedorSeleccionado(items[0].nombre);
                 }
             } catch (err) {
                 console.error("Error loading proveedores:", err);
@@ -306,10 +306,13 @@ export default function AnalisisPage() {
     const handleSaveCompra = async (productoId: number, cantidad: number, tipo: string) => {
         setSavingId(productoId);
         try {
-            const res = await api.post("/purchase/save-compra", {
-                productoId,
-                cantidad,
-                tipo
+            // Correct endpoint for saving orders/pedidos
+            const res = await api.post("/dashboard/orden", {
+                items: [{
+                    productoId,
+                    cantidad,
+                    tipo
+                }]
             });
             const data = res.data; // Assuming the API returns the updated SuggestedPurchaseResponse or similar
             if (data) {
