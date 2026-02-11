@@ -50,7 +50,9 @@ export function PendingShipmentsSync({ onPendientesLoaded }: PendingShipmentsSyn
     const generateBookmarklet = () => {
         if (typeof window === "undefined") return "#";
 
-        const origin = window.location.origin;
+        const currentOrigin = window.location.origin;
+        // Permite sobrescribir el origen si estamos en un túnel o localhost
+        const effectiveOrigin = process.env.NEXT_PUBLIC_BASE_URL || currentOrigin;
         const targetPath = window.location.pathname;
 
         const script = `(async function(){
@@ -118,7 +120,7 @@ export function PendingShipmentsSync({ onPendientesLoaded }: PendingShipmentsSyn
                 const count = Object.keys(map).length;
 
                 console.log('AXAM: Enviando data al dashboard...', map);
-                await fetch('${origin}/api/sync/pendientes', {
+                await fetch(\`${effectiveOrigin}/api/sync/pendientes\`, {
                     method: 'POST',
                     mode: 'cors',
                     headers: { 'Content-Type': 'application/json' },
@@ -138,7 +140,7 @@ export function PendingShipmentsSync({ onPendientesLoaded }: PendingShipmentsSyn
                     </div>
                 \`;
                 document.getElementById('returnBtn').onclick = () => {
-                    window.location.href = '${origin}${targetPath}?synced=1';
+                    window.location.href = \`${effectiveOrigin}${targetPath}?synced=1\`;
                 };
             } catch (e) {
                 overlay.innerHTML = '<div style="background:white;padding:30px;border-radius:20px;color:black;text-align:center;max-width:400px;width:90%;"><div style="font-size:50px;margin-bottom:10px;">❌</div><div style="color:#ef4444;font-size:18px;font-weight:bold;">Error de Sincronización</div><div style="font-size:14px;margin-top:10px;color:#6b7280;">' + e.message + '</div><button onclick="location.reload()" style="margin-top:20px;padding:10px 20px;background:#f3f4f6;border:none;border-radius:8px;cursor:pointer;">Cerrar</button></div>';
