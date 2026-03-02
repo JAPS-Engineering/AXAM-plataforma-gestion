@@ -18,7 +18,9 @@ import {
     XCircle,
     ChevronUp,
     ChevronDown,
-    ChevronsUpDown
+    ChevronsUpDown,
+    Download,
+    FileText
 } from "lucide-react";
 import { PendingShipmentsSync } from "@/components/pending-shipments-sync";
 import { cn } from "@/lib/utils";
@@ -255,6 +257,15 @@ export default function AnalisisPage() {
             result = result.filter((p) => (p.promedioVenta || 0) === 0);
         }
 
+        // Filtro Solo bajo mínimo (Frontend)
+        if (soloEnQuiebre) {
+            result = result.filter(item => {
+                const stock = item.stockActual || 0;
+                const minimo = item.stockMinimo;
+                return minimo !== null && stock < minimo;
+            });
+        }
+
         // Aplicar Ordenamiento
         const { column, direction } = sortConfig;
         if (column && direction) {
@@ -303,6 +314,49 @@ export default function AnalisisPage() {
         setCurrentPage(1);
     }, [search, salesStatus, algoritmo, mesesHistorico, mesesCobertura, soloEnQuiebre, sortConfig, frequency]);
 
+    // Productos para exportación
+    const productosParaExportar = useMemo(() => {
+        return itemsFiltrados.filter(p => p.compraRealizar && p.compraRealizar > 0);
+    }, [itemsFiltrados]);
+
+    const exportarCSV = async () => {
+        if (!productosParaExportar.length) return;
+
+        const items = productosParaExportar.map(p => ({
+            sku: p.sku,
+            descripcion: p.descripcion,
+            cantidadSugerida: p.compraRealizar
+        }));
+
+        const res = await api.post("/purchase/export/csv", { items }, { responseType: 'blob' });
+        const blob = res.data;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `OC_KC_Analisis_${new Date().toISOString().split("T")[0]}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const exportarTorkTxt = async () => {
+        if (!productosParaExportar.length) return;
+
+        const items = productosParaExportar.map(p => ({
+            sku: p.sku,
+            descripcion: p.descripcion,
+            cantidadSugerida: p.compraRealizar
+        }));
+
+        const res = await api.post("/purchase/export/tork-txt", { items }, { responseType: 'blob' });
+        const blob = res.data;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `OC_Tork_Analisis_${new Date().toISOString().split("T")[0]}.txt`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
     const handleSaveCompra = async (productoId: number, cantidad: number, tipo: string) => {
         setSavingId(productoId);
         try {
@@ -329,6 +383,34 @@ export default function AnalisisPage() {
             setSavingId(null);
         }
     };
+
+    // Navegación con flechas
+    useEffect(() => {
+        const handleNav = (e: any) => {
+            const { direction, productoId } = e.detail;
+            const rows = Array.from(document.querySelectorAll('tr[data-producto-id]'));
+            const currentIndex = rows.findIndex(r => r.getAttribute('data-producto-id') === String(productoId));
+
+            if (currentIndex === -1) return;
+
+            let nextIndex = direction === 'down' ? currentIndex + 1 : currentIndex - 1;
+
+            if (nextIndex >= 0 && nextIndex < rows.length) {
+                const nextRow = rows[nextIndex] as HTMLElement;
+                const input = nextRow.querySelector('input') as HTMLInputElement;
+
+                if (input) {
+                    input.focus();
+                    input.select();
+                    // Asegurar visibilidad
+                    input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+        };
+
+        window.addEventListener('order-cell-nav' as any, handleNav);
+        return () => window.removeEventListener('order-cell-nav' as any, handleNav);
+    }, []);
 
     const algoritmoInfo = ALGORITMOS.find(a => a.value === algoritmo);
 
@@ -569,6 +651,31 @@ export default function AnalisisPage() {
                                         <p className="text-2xl font-bold text-emerald-600">{mesesCobertura}</p>
                                         <p className="text-sm text-slate-500">{frequency === 'WEEKLY' ? 'Semanas' : 'Meses'} Cobertura</p>
                                     </div>
+                                    <div className="text-center border-l border-slate-200 pl-6">
+                                        <p className="text-2xl font-bold text-blue-600">
+                                            {itemsFiltrados.reduce((acc, i) => acc + (i.compraRealizar || 0), 0).toLocaleString("es-CL")}
+                                        </p>
+                                        <p className="text-sm text-slate-500">Unidades a Pedir</p>
+                                    </div>
+
+                                    {productosParaExportar.length > 0 && (
+                                        <div className="flex-1 flex justify-end gap-3 border-l border-slate-200 pl-6">
+                                            <button
+                                                onClick={exportarCSV}
+                                                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+                                            >
+                                                <Download className="h-4 w-4" />
+                                                CSV Kimberly Clark
+                                            </button>
+                                            <button
+                                                onClick={exportarTorkTxt}
+                                                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
+                                            >
+                                                <FileText className="h-4 w-4" />
+                                                TXT Tork
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )
@@ -683,6 +790,7 @@ export default function AnalisisPage() {
                                                 return (
                                                     <tr
                                                         key={item.id}
+                                                        data-producto-id={item.id}
                                                         className={bajoMinimo ? "bg-red-50" : idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}
                                                     >
                                                         <td className="px-4 py-3 font-mono font-medium text-slate-900">
@@ -776,7 +884,7 @@ export default function AnalisisPage() {
                         )}
                     </div>
                 </main>
-            </div>
-        </div>
+            </div >
+        </div >
     );
 }

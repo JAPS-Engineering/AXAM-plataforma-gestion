@@ -320,10 +320,6 @@ async function generateSuggestedPurchases(filtroValor, options = {}) {
         filtros.proveedor = filtroValor;
     }
 
-    if (soloEnQuiebre) {
-        filtros.stockMinimo = { not: null };
-    }
-
     const productos = await prisma.producto.findMany({
         where: filtros,
         select: { sku: true }
