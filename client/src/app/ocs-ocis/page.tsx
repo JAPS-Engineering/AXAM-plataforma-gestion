@@ -44,6 +44,31 @@ function SummaryTable({ title, items, onUpdate, onSendToManager, isSending, sort
     const totalUnits = items.reduce((sum, item) => sum + (item.compraRealizar || 0), 0);
     const totalCLP = items.reduce((sum, item) => sum + ((item.compraRealizar || 0) * (item.producto.costo || 0)), 0);
 
+    useEffect(() => {
+        const handleNav = (e: any) => {
+            const { direction, productoId } = e.detail;
+            const currentIndex = items.findIndex(p => p.producto.id === productoId);
+            if (currentIndex === -1) return;
+
+            const nextIndex = direction === "down" ? currentIndex + 1 : currentIndex - 1;
+            if (nextIndex >= 0 && nextIndex < items.length) {
+                const nextProductoId = items[nextIndex].producto.id;
+                setTimeout(() => {
+                    const selector = `input[data-producto-id="${nextProductoId}"]`;
+                    const nextInput = document.querySelector(selector) as HTMLInputElement;
+                    if (nextInput) {
+                        nextInput.focus();
+                        nextInput.select();
+                        nextInput.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                    }
+                }, 10);
+            }
+        };
+
+        window.addEventListener('order-cell-nav' as any, handleNav);
+        return () => window.removeEventListener('order-cell-nav' as any, handleNav);
+    }, [items]);
+
     return (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col mb-6">
             <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
@@ -368,9 +393,10 @@ export default function OcsOcisPage() {
 
         const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
         const url = URL.createObjectURL(blob);
+        const date = new Date().toISOString().split('T')[0];
         const link = document.createElement("a");
         link.href = url;
-        link.setAttribute("download", "pedido_kc.csv");
+        link.setAttribute("download", `pedido_kc_${date}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -389,9 +415,10 @@ export default function OcsOcisPage() {
 
         const blob = new Blob([txtContent], { type: "text/plain;charset=utf-8;" });
         const url = URL.createObjectURL(blob);
+        const date = new Date().toISOString().split('T')[0];
         const link = document.createElement("a");
         link.href = url;
-        link.setAttribute("download", "pedido_tork.txt");
+        link.setAttribute("download", `pedido_tork_${date}.txt`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

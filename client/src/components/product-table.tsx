@@ -18,7 +18,7 @@ interface ProductTableProps {
 }
 
 export type SortDirection = "asc" | "desc" | null;
-export type SortColumn = "familia" | "sku" | "descripcion" | "promedio" | "ventaMes" | "stock" | "sugerido" | "aComprar" | `mes_${number}` | null;
+export type SortColumn = "familia" | "sku" | "descripcion" | "promedio" | "ventaMes" | "stock" | "sugerido" | "pendientes" | "aComprar" | `mes_${number}` | null;
 
 export interface SortConfig {
     column: SortColumn;
@@ -74,6 +74,33 @@ export function ProductTable({ productos, columnas, onOrderUpdated, pendientesMa
         onOrderUpdated?.(productoId, cantidad, tipo);
     }, [onOrderUpdated]);
 
+    useEffect(() => {
+        const handleNav = (e: any) => {
+            const { direction, productoId } = e.detail;
+            const currentIndex = productos.findIndex(p => p.producto.id === productoId);
+            if (currentIndex === -1) return;
+
+            const nextIndex = direction === "down" ? currentIndex + 1 : currentIndex - 1;
+            if (nextIndex >= 0 && nextIndex < productos.length) {
+                const nextProductoId = productos[nextIndex].producto.id;
+                // Pequeño delay para asegurar que el DOM esté listo o simplemente buscar el elemento
+                setTimeout(() => {
+                    const selector = `input[data-producto-id="${nextProductoId}"]`;
+                    const nextInput = document.querySelector(selector) as HTMLInputElement;
+                    if (nextInput) {
+                        nextInput.focus();
+                        nextInput.select();
+                        // Scroll into view if needed
+                        nextInput.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                    }
+                }, 10);
+            }
+        };
+
+        window.addEventListener('order-cell-nav' as any, handleNav);
+        return () => window.removeEventListener('order-cell-nav' as any, handleNav);
+    }, [productos]);
+
     if (productos.length === 0) {
         return (
             <div className="flex items-center justify-center h-64 text-slate-500">
@@ -83,7 +110,7 @@ export function ProductTable({ productos, columnas, onOrderUpdated, pendientesMa
     }
 
     return (
-        <div className="overflow-auto max-h-[calc(100vh-320px)] rounded-lg border border-slate-200 shadow-sm">
+        <div className="overflow-auto max-h-[calc(100vh-320px)] rounded-lg border border-slate-200 shadow-sm scroll-smooth">
             <table className="w-full text-sm border-collapse">
                 <thead className="sticky top-0 z-30">
                     <tr className="bg-slate-100">
@@ -152,6 +179,7 @@ export function ProductTable({ productos, columnas, onOrderUpdated, pendientesMa
                         <th className="px-4 py-3 text-right font-semibold text-amber-700 bg-amber-50 border-b border-amber-200 min-w-[100px]">
                             <div className="flex items-center justify-end">
                                 Pendiente (3M)
+                                <SortButton column="pendientes" currentSort={sortConfig} onSort={onSort} isNumeric />
                             </div>
                         </th>
                         {/* SUGERIDO - Destacado */}

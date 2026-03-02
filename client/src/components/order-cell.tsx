@@ -78,8 +78,18 @@ export function OrderCell({ productoId, initialValue, initialType = 'OC', onSave
         if (e.key === "Enter") {
             e.currentTarget.blur();
             handleSave(value, tipo);
+        } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            const event = new CustomEvent("order-cell-nav", {
+                detail: {
+                    direction: e.key === "ArrowDown" ? "down" : "up",
+                    productoId
+                },
+                bubbles: true
+            });
+            e.currentTarget.dispatchEvent(event);
         }
-    }, [handleSave, value, tipo]);
+    }, [handleSave, value, tipo, productoId]);
 
     return (
         <div className="flex items-center gap-1">
@@ -89,6 +99,7 @@ export function OrderCell({ productoId, initialValue, initialType = 'OC', onSave
                 value={value}
                 onChange={handleChange}
                 onKeyDown={handleKeyDown}
+                data-producto-id={productoId}
                 className={cn(
                     "w-16 px-2 py-1 text-right bg-amber-50 border border-transparent rounded text-xs",
                     "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white",

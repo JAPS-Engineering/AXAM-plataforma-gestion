@@ -6,6 +6,78 @@
 const axios = require('axios');
 const { logInfo, logWarning, logError } = require('../utils/logger');
 const { getAuthHeaders } = require('../utils/auth');
+const { getPrismaClient } = require('../prisma/client');
+const prisma = getPrismaClient();
+
+async function getNextOrderNumber(type) {
+    const key = `ultimo_numero_${type.toLowerCase()}`;
+
+    try {
+        const headers = await getAuthHeaders();
+        // Consultar los últimos documentos de este tipo en Manager+
+        // Usamos un rango de fechas de los últimos 6 meses para asegurar que pescamos los últimos
+        const today = new Date();
+        const sixMonthsAgo = new Date();
+        sixMonthsAgo.setMonth(today.getMonth() - 6);
+
+        // Formato para la API: yyyyMMdd
+        const df = formatDate(sixMonthsAgo).split('/').reverse().join('');
+        const dt = formatDate(today).split('/').reverse().join('');
+
+        // CORRECCIÓN: El endpoint correcto para listar OCs es con modalidad 'C' (Compra/Comercial)
+        // y el campo que contiene el número de documento es 'folio'.
+        const url = `${ERP_BASE_URL}/documents/${RUT_EMPRESA}/${type}/C?df=${df}&dt=${dt}`;
+
+        logInfo(`[${type}] Consultando últimos documentos en Manager+ para correlativo...`);
+        const response = await axios.get(url, { headers, timeout: 15000 });
+        const docs = response.data.data || response.data || [];
+
+        let lastNum = 0;
+        if (Array.isArray(docs) && docs.length > 0) {
+            // Encontrar el folio más alto
+            docs.forEach(doc => {
+                const num = parseInt(doc.folio, 10);
+                if (!isNaN(num) && num > lastNum) {
+                    lastNum = num;
+                }
+            });
+            logInfo(`[${type}] Último número encontrado en ERP (folio): ${lastNum}`);
+        } else {
+            logWarning(`[${type}] No se encontraron documentos en el ERP. Usando respaldo local.`);
+            const config = await prisma.configuracion.findUnique({ where: { clave: key } });
+            lastNum = config ? parseInt(config.valor, 10) : 0;
+        }
+
+        const nextNum = lastNum + 1;
+
+        // Actualizar respaldo local en la tabla de configuración
+        await prisma.configuracion.upsert({
+            where: { clave: key },
+            update: { valor: String(nextNum) },
+            create: {
+                clave: key,
+                valor: String(nextNum),
+                descripcion: `Último número correlativo (ERP) para ${type}`
+            }
+        });
+
+        return String(nextNum);
+    } catch (error) {
+        logError(`[${type}] Error obteniendo correlativo del ERP: ${error.message}. Usando respaldo local.`);
+        // Fallback al local si falla la API
+        return await prisma.$transaction(async (tx) => {
+            const config = await tx.configuracion.findUnique({ where: { clave: key } });
+            const currentVal = config ? parseInt(config.valor, 10) : 1;
+            const nextNum = currentVal + 1;
+            await tx.configuracion.upsert({
+                where: { clave: key },
+                update: { valor: String(nextNum) },
+                create: { clave: key, valor: "1", descripcion: `Respaldo correlatvio ${type}` }
+            });
+            return String(nextNum);
+        });
+    }
+}
 
 // Flag para habilitar/deshabilitar integración real
 // En producción debería estar en true o controlado por variable de entorno
@@ -58,6 +130,10 @@ async function createPurchaseOrder(data) {
         const headers = await getAuthHeaders();
         const url = `${ERP_BASE_URL}/import/create-document/?emitir=0&docnumreg=1`;
 
+        // Obtener número correlativo
+        const numDoc = await getNextOrderNumber('OC');
+        logInfo(`[OC] Usando número correlativo: ${numDoc}`);
+
         // Fechas
         const today = new Date();
         const vctoDate = new Date(today);
@@ -76,7 +152,7 @@ async function createPurchaseOrder(data) {
         const payload = {
             rut_empresa: RUT_EMPRESA,
             tipodocumento: "OC",
-            num_doc: String(Date.now()).slice(-6), // Número temporal único
+            num_doc: numDoc,
             fecha_doc: formatDate(today),
             fecha_ref: "",
             fecha_vcto: formatDate(vctoDate),

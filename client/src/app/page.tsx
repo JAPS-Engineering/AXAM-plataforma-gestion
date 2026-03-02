@@ -204,6 +204,10 @@ export default function DashboardPage() {
             aValue = a.compraRealizar || 0;
             bValue = b.compraRealizar || 0;
             break;
+          case "pendientes":
+            aValue = pendientesData[a.producto.sku] || 0;
+            bValue = pendientesData[b.producto.sku] || 0;
+            break;
           default:
             // Handle mes_X columns
             if (sortConfig.column?.startsWith("mes_")) {
@@ -229,7 +233,7 @@ export default function DashboardPage() {
     }
 
     return result;
-  }, [data?.productos, busqueda, salesStatus, estadosSeleccionados, soloBajoMinimo, sortConfig]);
+  }, [data?.productos, busqueda, salesStatus, estadosSeleccionados, soloBajoMinimo, sortConfig, pendientesData]);
 
   // Paginated products
   const { paginatedProducts, totalPages } = useMemo(() => {
