@@ -338,24 +338,7 @@ export default function AnalisisPage() {
         URL.revokeObjectURL(url);
     };
 
-    const exportarTorkTxt = async () => {
-        if (!productosParaExportar.length) return;
 
-        const items = productosParaExportar.map(p => ({
-            sku: p.sku,
-            descripcion: p.descripcion,
-            cantidadSugerida: p.compraRealizar
-        }));
-
-        const res = await api.post("/purchase/export/tork-txt", { items }, { responseType: 'blob' });
-        const blob = res.data;
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `OC_Tork_Analisis_${new Date().toISOString().split("T")[0]}.txt`;
-        a.click();
-        URL.revokeObjectURL(url);
-    };
 
     const handleSaveCompra = async (productoId: number, cantidad: number, tipo: string) => {
         setSavingId(productoId);
@@ -666,13 +649,6 @@ export default function AnalisisPage() {
                                             >
                                                 <Download className="h-4 w-4" />
                                                 CSV Kimberly Clark
-                                            </button>
-                                            <button
-                                                onClick={exportarTorkTxt}
-                                                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
-                                            >
-                                                <FileText className="h-4 w-4" />
-                                                TXT Tork
                                             </button>
                                         </div>
                                     )}

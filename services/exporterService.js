@@ -43,21 +43,11 @@ function generateKCCSV(items) {
 function generateTorkTxt(items) {
     const lines = [];
 
-    // Header
-    const fecha = new Date().toISOString().split('T')[0];
-    lines.push(`ORDEN_COMPRA_TORK|${fecha}`);
-    lines.push('---');
-
-    // Items
-    items.forEach((item, index) => {
+    items.forEach((item) => {
+        const sku = item.sku.startsWith("T-") ? item.sku.replace("T-", "") : item.sku;
         const cantidad = item.cantidadSugerida || item.cantidad;
-        lines.push(`${index + 1}|${item.sku}|${cantidad}|${item.descripcion}`);
+        lines.push(`${sku}\t${cantidad}`);
     });
-
-    // Footer
-    lines.push('---');
-    lines.push(`TOTAL_ITEMS|${items.length}`);
-    lines.push(`TOTAL_UNIDADES|${items.reduce((sum, i) => sum + (i.cantidadSugerida || i.cantidad), 0)}`);
 
     return lines.join('\n');
 }

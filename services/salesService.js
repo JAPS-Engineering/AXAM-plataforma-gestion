@@ -128,28 +128,26 @@ async function getDocumentsByType(docType, fechaInicio, fechaFin, attempt = 1) {
 }
 
 /**
- * Verifica si un documento FAVE hace referencia a una Guía de Despacho (GDVE)
- * Para evitar duplicidad de ventas.
+ * Intenta obtener el folio de una Guía de Despacho (GDVE) referenciada en un documento
  */
-function isFaveRefToGuide(doc) {
+function getReferencedGuideFolio(doc) {
     // 1. Revisar campo referencias estructurado
     if (doc.referencias && Array.isArray(doc.referencias)) {
-        const hasGuideRef = doc.referencias.some(ref =>
-            ref.tipo_doc && (ref.tipo_doc.includes('GD') || ref.tipo_doc.includes('GUIA'))
-        );
-        if (hasGuideRef) return true;
+        for (const ref of doc.referencias) {
+            if (ref.tipo_doc && (ref.tipo_doc.includes('GD') || ref.tipo_doc.includes('GUIA'))) {
+                return ref.folio_ref || ref.folio || null;
+            }
+        }
     }
 
     // 2. Revisar Glosa y Glosa Encabezado (fallback común)
-    // El API suele devolver "glosa_enc" en lugar de "glosa"
     const glosa = (doc.glosa || doc.glosa_enc || '').toUpperCase();
 
-    // Patrones comunes: "SEGÚN GUÍA", "REF GD", "GDVE", "GUIA DE DESPACHO"
-    if (glosa.includes('GUIA') || glosa.includes('GD') || glosa.includes('DESPACHO')) {
-        return true;
-    }
+    // Patrones comunes: "SEGÚN GUÍA 18208", "GD 18208", "REF GDVE 18208"
+    const match = glosa.match(/(?:GD|GUIA|GDVE|GDV)\s*[-:]?\s*(\d+)/);
+    if (match) return match[1];
 
-    return false;
+    return null;
 }
 
 /**
@@ -164,11 +162,10 @@ async function getAllSales(fechaInicio, fechaFin) {
         const allDocuments = [];
         const stats = {};
 
-        // Obtener documentos de cada tipo SECUENCIALMENTE para evitar error 429 (Rate Limiting)
+        // Obtener documentos de cada tipo SECUENCIALMENTE
         const results = [];
         for (const docType of DOCUMENT_TYPES) {
             try {
-                // Pequeña pausa entre peticiones para no saturar la API
                 if (results.length > 0) {
                     await new Promise(resolve => setTimeout(resolve, 500));
                 }
@@ -182,18 +179,27 @@ async function getAllSales(fechaInicio, fechaFin) {
             }
         }
 
-        let favesSkipped = 0;
+        // Identificar folios de Guías que ya fueron Facturadas
+        const guideFoliosInvoiced = new Set();
+        const faves = results.find(r => r.type === 'FAVE')?.documents || [];
+        for (const doc of faves) {
+            const guideFolio = getReferencedGuideFolio(doc);
+            if (guideFolio) {
+                guideFoliosInvoiced.add(guideFolio.toString());
+            }
+        }
+
+        let gdvesSkipped = 0;
 
         for (const result of results) {
             stats[result.type] = result.documents.length;
 
             for (const doc of result.documents) {
-                // Lógica de Deduplicación FAVE vs GDVE
-                if (result.type === 'FAVE') {
-                    if (isFaveRefToGuide(doc)) {
-                        favesSkipped++;
-                        const glosa = doc.glosa || doc.glosa_enc || 'Sin glosa';
-                        logInfo(`  ⏭️  Saltando FAVE ${doc.folio} (Referencia a Guía detectada en: "${glosa.substring(0, 50)}...")`);
+                // Lógica de Deduplicación: Si es una Guía que ya fue facturada, OMITIR LA GUÍA
+                if (result.type === 'GDVE') {
+                    const folio = doc.folio || doc.numero;
+                    if (guideFoliosInvoiced.has(folio.toString())) {
+                        gdvesSkipped++;
                         continue;
                     }
                 }
@@ -203,10 +209,9 @@ async function getAllSales(fechaInicio, fechaFin) {
             }
         }
 
-        logSuccess(`Resumen Deduplicación:`);
-        logSuccess(`  Total FAVEs procesadas: ${stats['FAVE'] || 0}`);
-        logSuccess(`  FAVEs omitidas (Ref a GDVE): ${favesSkipped}`);
-        logSuccess(`  Total GDVEs incluidas: ${stats['GDVE'] || 0}`);
+        logSuccess(`Resumen Deduplicación (Prioridad Facturas):`);
+        logSuccess(`  FAVEs procesadas: ${stats['FAVE'] || 0}`);
+        logSuccess(`  GDVEs omitidas (Ya facturadas): ${gdvesSkipped}`);
         logSuccess(`  Total final documentos: ${allDocuments.length}`);
 
         return allDocuments;
@@ -243,7 +248,8 @@ function extractProductsFromDocument(document) {
         const sku = item.codigo || item.cod_prod || item.codigo_prod || item.cod_art || item.sku;
         const cantidad = parseFloat(item.cantidad || item.cant || 0);
 
-        let montoNeto = parseFloat(item.monto_neto || item.neto || item.precio_neto || 0);
+        // Priorizar el neto calculado por el ERP que ya incluye descuentos por línea
+        let montoNeto = parseFloat(item.neto_por_producto || item.v_netoporproducto || item.monto_neto || item.neto || item.precio_neto || 0);
 
         // Si no hay monto neto directo, calcularlo (precio_unitario * cantidad)
         if (montoNeto === 0 && item.precio_unitario) {

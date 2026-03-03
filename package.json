@@ -44,7 +44,8 @@
     "jsonwebtoken": "^9.0.3",
     "node-cron": "^4.2.1",
     "nodemailer": "^7.0.13",
-    "prisma": "^5.22.0"
+    "prisma": "^5.22.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

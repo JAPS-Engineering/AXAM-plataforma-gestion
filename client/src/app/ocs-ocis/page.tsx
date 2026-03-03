@@ -406,11 +406,11 @@ export default function OcsOcisPage() {
         const items = pendingItems.filter(i => i.producto.sku.startsWith("T-"));
         if (items.length === 0) return;
 
-        // Format: Remove T-, Quantity, separated by space
+        // Format: Tab-delimited
         const txtContent = items.map(item => {
             const code = item.producto.sku.replace("T-", "");
             const qty = item.compraRealizar;
-            return `${code} ${qty}`;
+            return `${code}\t${qty}`;
         }).join("\n");
 
         const blob = new Blob([txtContent], { type: "text/plain;charset=utf-8;" });
@@ -419,6 +419,28 @@ export default function OcsOcisPage() {
         const link = document.createElement("a");
         link.href = url;
         link.setAttribute("download", `pedido_tork_${date}.txt`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleExportTorkCSV = () => {
+        const items = pendingItems.filter(i => i.producto.sku.startsWith("T-"));
+        if (items.length === 0) return;
+
+        // Format: CSV
+        const csvContent = items.map(item => {
+            const code = item.producto.sku.replace("T-", "");
+            const qty = item.compraRealizar;
+            return `${code},${qty}`;
+        }).join("\n");
+
+        const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const date = new Date().toISOString().split('T')[0];
+        const link = document.createElement("a");
+        link.href = url;
+        link.setAttribute("download", `pedido_tork_${date}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -754,11 +776,23 @@ export default function OcsOcisPage() {
                                 className={cn(
                                     "flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors",
                                     hasTork
-                                        ? "bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200"
+                                        ? "bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200"
                                         : "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
                                 )}
                             >
                                 <FileText className="h-3.5 w-3.5" /> TXT Tork
+                            </button>
+                            <button
+                                onClick={handleExportTorkCSV}
+                                disabled={!hasTork}
+                                className={cn(
+                                    "flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors",
+                                    hasTork
+                                        ? "bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200"
+                                        : "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                                )}
+                            >
+                                <Download className="h-3.5 w-3.5" /> CSV Tork
                             </button>
 
                         </div>

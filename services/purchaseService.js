@@ -199,10 +199,33 @@ async function getMonthlyPurchases(year, month) {
     return getAllPurchases(startDate, endDate);
 }
 
+/**
+ * Obtener información de un producto específico desde el ERP
+ */
+async function getSingleProductInfo(sku) {
+    try {
+        const headers = await getAuthHeaders();
+        // Manager+ permite filtrar por código en el endpoint de productos
+        const url = `${ERP_BASE_URL}/products/${RUT_EMPRESA}/?codigo=${sku}`;
+
+        const response = await axios.get(url, { headers, timeout: 30000 });
+        const products = response.data.data || response.data || [];
+
+        if (Array.isArray(products) && products.length > 0) {
+            return products[0];
+        }
+        return null;
+    } catch (error) {
+        logWarning(`No se pudo obtener info del producto ${sku}: ${error.message}`);
+        return null;
+    }
+}
+
 module.exports = {
     getPurchaseDocuments,
     extractProductsFromPurchase,
     getAllPurchases,
     getDailyPurchases,
-    getMonthlyPurchases
+    getMonthlyPurchases,
+    getSingleProductInfo
 };

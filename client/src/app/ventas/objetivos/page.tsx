@@ -12,6 +12,7 @@ import { MarketShareChart } from "@/components/ventas/MarketShareChart";
 import { ResumenMesActualTable } from "@/components/ventas/ResumenMesActualTable";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { DataExplanation } from "@/components/data-explanation";
 
 // Helpers for dates (Backend uses unpadded months e.g. "2024-1")
 const getCurrentMonth = () => {
@@ -568,6 +569,7 @@ export default function ObjetivosPage() {
                 </header>
 
                 <main className="flex-1 overflow-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-slate-200">
+                    <DataExplanation type="metas" />
                     {/* KPI Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4 transition-transform hover:scale-[1.02]">

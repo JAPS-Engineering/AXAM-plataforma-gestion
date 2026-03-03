@@ -8,6 +8,7 @@ import { Pagination } from "@/components/pagination";
 import { useState, useMemo } from "react";
 import { DollarSign, TrendingUp, Package, Calendar, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { FiltersBar } from "@/components/filters-bar";
+import { DataExplanation } from "@/components/data-explanation";
 
 // Formateador de moneda CLP
 const formatCLP = (amount: number) => {
@@ -272,6 +273,9 @@ export default function VentasPage() {
                 </header>
 
                 <main className="flex-1 overflow-auto p-6">
+                    {/* Explicación de Datos */}
+                    <DataExplanation type="ventas" />
+
                     {/* KPI Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                         <KPICard

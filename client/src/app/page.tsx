@@ -12,6 +12,7 @@ import { SyncModal } from "@/components/sync-modal";
 import { useState, useMemo, useEffect } from "react";
 import { Package, TrendingUp, AlertTriangle, ShoppingCart, Download, FileText, Database } from "lucide-react";
 import { PendingShipmentsSync } from "@/components/pending-shipments-sync";
+import { DataExplanation } from "@/components/data-explanation";
 
 export default function DashboardPage() {
   const queryClient = useQueryClient();
@@ -333,6 +334,7 @@ export default function DashboardPage() {
         </div>
 
         <main className="flex-1 overflow-auto p-6">
+          <DataExplanation type="dashboard" />
           {/* KPI Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
             <KPICard

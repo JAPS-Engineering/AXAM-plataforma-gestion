@@ -120,10 +120,19 @@ export function RendimientoAnualChart({
                                     const diff = data.acumuladoActual - data.acumuladoAnterior;
                                     const isPositive = diff >= 0;
 
+                                    const pct = data.acumuladoAnterior > 0
+                                        ? (diff / data.acumuladoAnterior) * 100
+                                        : 0;
+
                                     return (
                                         <div className="bg-white p-4 border border-slate-100 shadow-xl rounded-xl min-w-[280px]">
                                             <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
-                                                <span className="font-bold text-slate-800">{mesName}</span>
+                                                <div className="flex flex-col">
+                                                    <span className="font-bold text-slate-800">{mesName}</span>
+                                                    <span className={`text-[10px] font-bold ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                                                        {isPositive ? '↑' : '↓'} {Math.abs(pct).toFixed(1)}% CRECIMIENTO
+                                                    </span>
+                                                </div>
                                                 <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${isPositive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                                                     {isPositive ? '+' : ''}{formatTooltipCLP(diff)}
                                                 </span>

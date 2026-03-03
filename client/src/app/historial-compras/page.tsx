@@ -20,6 +20,7 @@ import {
     Table as TableIcon
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { DataExplanation } from "@/components/data-explanation";
 import { PurchaseCharts } from "./components/purchase-charts";
 import {
     LineChart,
@@ -368,6 +369,9 @@ export default function HistorialComprasPage() {
                 </header>
 
                 <main className="flex-1 overflow-auto p-6">
+                    {/* Explicación de Datos */}
+                    <DataExplanation type="compras" />
+
                     {/* KPI Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                         <KPICard
@@ -550,7 +554,7 @@ export default function HistorialComprasPage() {
                                                     </th>
                                                     <th className="px-4 py-3 sticky left-28 bg-slate-50 z-10 w-24 text-center border-r border-slate-200 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]">
                                                         <div className="flex items-center justify-center gap-1 group">
-                                                            Folio
+                                                            N°FACE
                                                             <SortButton column="folio" currentSort={currentSort} onSort={handleSort} />
                                                         </div>
                                                     </th>
