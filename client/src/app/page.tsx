@@ -25,6 +25,7 @@ export default function DashboardPage() {
   const [meses, setMeses] = useState(3);
   const [frequency, setFrequency] = useState<'MONTHLY' | 'WEEKLY'>('MONTHLY');
   const [busqueda, setBusqueda] = useState("");
+  const [listaId, setListaId] = useState("652"); // E-commerce por defecto
 
   const [salesStatus, setSalesStatus] = useState<'all' | 'with_sales' | 'without_sales'>('all');
   const [estadosSeleccionados, setEstadosSeleccionados] = useState<StockStatus[]>([]);
@@ -42,8 +43,8 @@ export default function DashboardPage() {
 
   // Data fetching
   const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ["dashboard", meses, marca, frequency],
-    queryFn: () => fetchDashboard(meses, marca || undefined, frequency),
+    queryKey: ["dashboard", meses, marca, frequency, listaId],
+    queryFn: () => fetchDashboard(meses, marca || undefined, frequency, listaId),
   });
 
   // ... (rest of code) ...
@@ -429,6 +430,8 @@ export default function DashboardPage() {
 
             salesStatus={salesStatus}
             onSalesStatusChange={handleFilterChange(setSalesStatus)}
+            listaId={listaId}
+            onListaIdChange={handleFilterChange(setListaId)}
             estadosSeleccionados={estadosSeleccionados}
             onEstadosChange={handleFilterChange(setEstadosSeleccionados)}
             soloBajoMinimo={soloBajoMinimo}

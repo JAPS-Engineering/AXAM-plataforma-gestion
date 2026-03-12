@@ -83,13 +83,18 @@ export default function AnalisisMargenesPage() {
     // Calculate date range based on period mode
     const range = useMemo(() => {
         if (periodMode === "preset") {
-            const endDate = new Date();
-            const startDate = new Date();
-            startDate.setMonth(startDate.getMonth() - meses);
-            return {
-                start: startDate.toISOString().split('T')[0].substring(0, 7), // YYYY-MM
-                end: endDate.toISOString().split('T')[0].substring(0, 7)
-            };
+            const now = new Date();
+            const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+            if (meses === 1) {
+                // Mes Actual: solo el mes en curso
+                return { start: currentMonth, end: currentMonth };
+            }
+
+            // Últimos N meses: desde hace N meses hasta el mes actual (inclusive)
+            const startDate = new Date(now.getFullYear(), now.getMonth() - (meses - 1), 1);
+            const startMonth = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}`;
+            return { start: startMonth, end: currentMonth };
         } else {
             return customRange;
         }

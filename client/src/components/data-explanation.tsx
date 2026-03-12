@@ -22,11 +22,11 @@ export function DataExplanation({ type }: DataExplanationProps) {
         ventas: {
             title: 'Lógica de Sincronización de Ingresos',
             icon: <BarChart3 className="w-5 h-5 text-green-600" />,
-            description: 'Cálculo de ingresos netos mediante la jerarquía de documentos de venta.',
+            description: 'Cálculo de ingresos netos mediante la jerarquía de documentos de venta según el período.',
             rules: [
-                'Prioridad de Documentos: Se procesan FAVE, BOVE y GDVE. Para evitar duplicidad, si un monto ya fue registrado por una Factura (FAVE), se ignora la Guía de Despacho (GDVE) relacionada.',
-                'Cálculo Neto: Venta = Σ(Monto Neto por Ítem) - Notas de Crédito (NCCE). Se utiliza la columna "Neto afecto/exento" de Manager para garantizar exactitud con el balance contable.',
-                'Sincronización Diaria: Cada madrugada el sistema recorre los documentos del día anterior, deduplica folios y actualiza el catálogo con cualquier nuevo SKU detectado.'
+                'Jerarquía de Periodo: En periodos HISTÓRICOS se contabilizan TODAS las Facturas (FAVE), Boletas (BOVE) e Ingresos (BOVE/NCVE) sin considerar guías. En el periodo ACTUAL se priorizan las Guías (GDVE) y se omiten las Facturas que referencien a una guía ya contabilizada.',
+                'Cálculo Neto: Venta = Σ(Monto Neto por Ítem) - Notas de Crédito (NCVE). Se utiliza la fórmula exacta de Manager para garantizar consistencia con el balance contable final.',
+                'Discrepancias: Al capturar el 100% de la data bruta del ERP, cualquier diferencia entre lo visualizado y lo esperado no depende de la lógica del sistema sino de la correcta emisión y glosa de documentos en Manager+.'
             ]
         },
         analisis: {
@@ -44,10 +44,9 @@ export function DataExplanation({ type }: DataExplanationProps) {
             icon: <Info className="w-5 h-5 text-indigo-600" />,
             description: 'Detalle técnico sobre la obtención de productos, flujos de sincronización e integridad del dashboard.',
             rules: [
-                'Sourcing de Productos: El catálogo base proviene de Manager+. Si una venta o compra contiene un SKU no registrado localmente, el sistema lo crea on-the-fly consultando la ficha completa del ERP.',
-                'Flujo de Sincronización: Sincronización "Delta" automática diaria (04:00 AM) para datos del día anterior y sincronización "Histórica" manual para cierres de mes o rangos específicos.',
-                'Captura de Datos: Se toma el 100% de la data bruta (Raw Data) de Manager+. Los filtros de "Listas de Precio" solo se aplican para visualización, nunca para excluir montos de los totales contables.',
-                'Métricas de Origen: Los ingresos y egresos se calculan sobre el "Monto Neto" por línea de cada documento. El inventario se actualiza desde la columna "Stock Actual" del ERP en cada sincronización.'
+                'Captura de Datos: Se toma el 100% de la data bruta de Manager+. El sistema no omite registros contables; el cálculo es una réplica exacta de la información fuente.',
+                'Transición de Periodo: Al cerrar un mes, el sistema actualiza automáticamente la data para ese periodo usando únicamente Facturas/Boletas (FAVE/BOVE), descartando la información de Guías usada temporalmente para el "tiempo real".',
+                'Integridad del Dashboard: Los ingresos y egresos se calculan sobre el "Monto Neto" por línea. El inventario se actualiza desde la columna "Stock Actual" del ERP en cada ciclo de sincronización.'
             ]
         },
         metas: {
@@ -55,9 +54,9 @@ export function DataExplanation({ type }: DataExplanationProps) {
             icon: <Target className="w-5 h-5 text-rose-600" />,
             description: 'Metodología de atribución y cálculo de cumplimiento para el equipo comercial.',
             rules: [
-                'Atribución: Se identifica al vendedor mediante los campos "usuario_vendedor", "cod_vendedor" o "vendedor" del documento original en Manager+.',
-                'Documentos Sincronizados: Se suman FAVE, BOVE y GDVE, y se descuentan de forma automática las Notas de Crédito (NCVE) para obtener la venta neta real.',
-                'Universo de Productos: Para el cumplimiento de objetivos se concidera el 100% de los productos facturados (Venta Total), sin filtros de White List, asegurando transparencia contable.'
+                'Atribución y Prioridad: Se identifica al vendedor en Manager+. Se suman GDVE (prioridad en mes actual), FAVE y BOVE, descontando automáticamente las NCVE. No quedan documentos "pendientes" de extracción.',
+                'Consistencia: La fórmula de cálculo es inalterable y refleja los montos netos emitidos. Cualquier discrepancia debe revisarse directamente en el documento original del ERP.',
+                'Universo de Productos: Se considera el 100% de los productos facturados para el cumplimiento de objetivos (Venta Total), asegurando transparencia contable absoluta.'
             ]
         }
     }[type];

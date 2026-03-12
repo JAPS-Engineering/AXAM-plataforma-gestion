@@ -130,10 +130,21 @@ async function getDashboard(req, res) {
             };
         }
 
-        // Filtro de marca
-        const filtroMarca = marca ? {
-            sku: { startsWith: marca.toUpperCase() }
-        } : {};
+        // Filtro de marca y lista de precios
+        const { listaId } = req.query;
+
+        const filtroMarca = {
+            AND: [
+                marca ? { sku: { startsWith: marca.toUpperCase() } } : {},
+                listaId && listaId !== 'all' ? {
+                    preciosListas: {
+                        some: {
+                            listaId: parseInt(listaId, 10)
+                        }
+                    }
+                } : {}
+            ]
+        };
 
         // ==========================================
         // OBTENER VENTAS DE HOY (LIVE GAP FILLING)
@@ -227,7 +238,10 @@ async function getDashboard(req, res) {
 
                 // Mapear ventas a las semanas objetivo
                 const ventasMap = new Map();
-                ventasSemanales.forEach(v => ventasMap.set(`${v.ano}-${v.semana}`, v.cantidadVendida));
+                ventasSemanales.forEach(v => {
+                    const key = `${v.ano}-${v.semana}`;
+                    ventasMap.set(key, (ventasMap.get(key) || 0) + v.cantidadVendida);
+                });
 
                 dataPoints = targetWeeks.map(t => ({
                     ano: t.y,
@@ -266,7 +280,8 @@ async function getDashboard(req, res) {
 
                 const ventasPorMes = {};
                 for (const v of ventasHistoricas) {
-                    ventasPorMes[`${v.ano}-${v.mes}`] = v.cantidadVendida;
+                    const key = `${v.ano}-${v.mes}`;
+                    ventasPorMes[key] = (ventasPorMes[key] || 0) + v.cantidadVendida;
                 }
 
                 dataPoints = monthsArray.map(m => ({

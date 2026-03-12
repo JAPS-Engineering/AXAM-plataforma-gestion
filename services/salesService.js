@@ -155,16 +155,25 @@ function getReferencedGuideFolio(doc) {
  * Deduplica FAVEs que vienen de Guías.
  */
 async function getAllSales(fechaInicio, fechaFin) {
+    // Definir si el periodo es histórico (termina antes del inicio del mes actual)
+    const hoy = new Date();
+    const inicioMesActual = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    const esHistorico = fechaFin < inicioMesActual;
+
     // Usar mutex para evitar que múltiples llamadas concurrentes saturen la API del ERP
     return erpMutex.runExclusive(async () => {
-        logInfo(`Obteniendo ventas de ${DOCUMENT_TYPES.join(', ')} del ${format(fechaInicio, 'dd/MM/yyyy')} al ${format(fechaFin, 'dd/MM/yyyy')}...`);
+        const typesToFetch = esHistorico 
+            ? DOCUMENT_TYPES.filter(t => t !== 'GDVE')
+            : DOCUMENT_TYPES;
+
+        logInfo(`Obteniendo ventas (${esHistorico ? 'HISTÓRICO' : 'ACTUAL'}) de ${typesToFetch.join(', ')} del ${format(fechaInicio, 'dd/MM/yyyy')} al ${format(fechaFin, 'dd/MM/yyyy')}...`);
 
         const allDocuments = [];
         const stats = {};
 
         // Obtener documentos de cada tipo SECUENCIALMENTE
         const results = [];
-        for (const docType of DOCUMENT_TYPES) {
+        for (const docType of typesToFetch) {
             try {
                 if (results.length > 0) {
                     await new Promise(resolve => setTimeout(resolve, 500));
@@ -179,39 +188,54 @@ async function getAllSales(fechaInicio, fechaFin) {
             }
         }
 
-        // Identificar folios de Guías que ya fueron Facturadas
+        // --- LÓGICA DE DEDUPLICACIÓN / FILTRADO ---
+        
         const guideFoliosInvoiced = new Set();
-        const faves = results.find(r => r.type === 'FAVE')?.documents || [];
-        for (const doc of faves) {
-            const guideFolio = getReferencedGuideFolio(doc);
-            if (guideFolio) {
-                guideFoliosInvoiced.add(guideFolio.toString());
+        if (!esHistorico) {
+            // En el periodo ACTUAL, identificamos qué Facturas vienen de Guías
+            // para PRIORIZAR LA GUÍA y OMITIR LA FACTURA.
+            const faves = results.find(r => r.type === 'FAVE')?.documents || [];
+            for (const doc of faves) {
+                const guideFolio = getReferencedGuideFolio(doc);
+                if (guideFolio) {
+                    guideFoliosInvoiced.add(guideFolio.toString());
+                }
             }
         }
 
-        let gdvesSkipped = 0;
+        let skippedCount = 0;
 
         for (const result of results) {
             stats[result.type] = result.documents.length;
 
             for (const doc of result.documents) {
-                // Lógica de Deduplicación: Si es una Guía que ya fue facturada, OMITIR LA GUÍA
-                if (result.type === 'GDVE') {
-                    const folio = doc.folio || doc.numero;
-                    if (guideFoliosInvoiced.has(folio.toString())) {
-                        gdvesSkipped++;
-                        continue;
+                if (!esHistorico) {
+                    // Lógica para periodo ACTUAL: Prioridad Guías
+                    // Si es una Factura (FAVE) que ya tiene Guía, OMITIR LA FACTURA
+                    if (result.type === 'FAVE') {
+                        const guideFolio = getReferencedGuideFolio(doc);
+                        if (guideFolio) {
+                            skippedCount++;
+                            continue;
+                        }
                     }
-                }
+                } 
+                // En periodo HISTÓRICO no hay GDVEs y se procesan todas las FAVEs sin filtro.
 
                 doc._docType = result.type;
                 allDocuments.push(doc);
             }
         }
 
-        logSuccess(`Resumen Deduplicación (Prioridad Facturas):`);
-        logSuccess(`  FAVEs procesadas: ${stats['FAVE'] || 0}`);
-        logSuccess(`  GDVEs omitidas (Ya facturadas): ${gdvesSkipped}`);
+        if (esHistorico) {
+            logSuccess(`Resumen Sincronización Histórica:`);
+            logSuccess(`  FAVEs: ${stats['FAVE'] || 0} (Todas procesadas)`);
+            logSuccess(`  GDVEs: 0 (Ignoradas por ser histórico)`);
+        } else {
+            logSuccess(`Resumen Deduplicación (Prioridad Guías):`);
+            logSuccess(`  GDVEs procesadas: ${stats['GDVE'] || 0}`);
+            logSuccess(`  FAVEs omitidas (Ya tienen guía): ${skippedCount}`);
+        }
         logSuccess(`  Total final documentos: ${allDocuments.length}`);
 
         return allDocuments;

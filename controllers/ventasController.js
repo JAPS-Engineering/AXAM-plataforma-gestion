@@ -25,10 +25,16 @@ async function getVentasDashboard(req, res) {
         const { meses = 3, marca } = req.query;
         const { startYear, startMonth, endYear, endMonth, monthsArray } = parseDateParams(req.query);
 
+        const mesActualObj = getMesActual();
+        // Excluir el mes actual de ventaHistorica — esos datos vienen de ventaActual
         const dateFilterSql = {
             AND: [
                 { OR: [{ ano: { gt: startYear } }, { ano: startYear, mes: { gte: startMonth } }] },
-                { OR: [{ ano: { lt: endYear } }, { ano: endYear, mes: { lte: endMonth } }] }
+                { OR: [{ ano: { lt: endYear } }, { ano: endYear, mes: { lte: endMonth } }] },
+                // Excluir el mes actual del sistema (ya lo incluimos desde ventaActual)
+                {
+                    NOT: { ano: mesActualObj.ano, mes: mesActualObj.mes }
+                }
             ]
         };
 
@@ -43,7 +49,7 @@ async function getVentasDashboard(req, res) {
             orderBy: { sku: 'asc' }
         });
 
-        const mesActualObj = getMesActual(); // { ano: 2026, mes: 2 }
+        // mesActualObj ya declarado arriba
 
         let totalMontoGlobal = 0;
         const rows = productosDB.map(producto => {
@@ -70,15 +76,9 @@ async function getVentasDashboard(req, res) {
             const ventasMeses = monthsArray.map(m => {
                 let data = ventasPorMes[`${m.ano}-${m.mes}`] || { cantidad: 0, montoNeto: 0 };
 
-                // Si el mes iterado coincide con el Mes Actual del sistema, sumamos lo de VentaActual
-                // Esto permite que aparezca en la tabla/grafico
+                // Para el mes actual: usar SOLO ventaActual (ventaHistorica ya fue excluida del filtro)
                 if (m.ano === mesActualObj.ano && m.mes === mesActualObj.mes) {
-                    // Nota: Sumamos. En teoría VentaHistorica no debería tener datos del mes en curso si VentaActual está activa,
-                    // pero si hubiera algo parcial, lo sumamos.
-                    data = {
-                        cantidad: data.cantidad + cantidadActual,
-                        montoNeto: data.montoNeto + montoActual
-                    };
+                    data = { cantidad: cantidadActual, montoNeto: montoActual };
                 }
 
                 return { ano: m.ano, mes: m.mes, label: m.label, cantidad: data.cantidad, montoNeto: data.montoNeto };
@@ -142,7 +142,9 @@ async function getVentasResumen(req, res) {
 
         const baseDateClause = [
             { OR: [{ ano: { gt: startYear } }, { ano: startYear, mes: { gte: startMonth } }] },
-            { OR: [{ ano: { lt: endYear } }, { ano: endYear, mes: { lte: endMonth } }] }
+            { OR: [{ ano: { lt: endYear } }, { ano: endYear, mes: { lte: endMonth } }] },
+            // Excluir el mes actual — viene de ventaActual para evitar doble conteo
+            { NOT: { ano: mesActualObj.ano, mes: mesActualObj.mes } }
         ];
 
         const filterHistorico = {
@@ -362,6 +364,8 @@ async function getGraficosAvanzados(req, res) {
             (
                 SELECT producto_id, ano, mes, vendedor, cantidad_vendida, monto_neto 
                 FROM ventas_mensuales
+                -- Excluir mes actual de históricas para evitar doble conteo con ventas_actuales
+                WHERE NOT (ano = ${mesActualObj.ano} AND mes = ${mesActualObj.mes})
                 UNION ALL
                 SELECT producto_id, ${mesActualObj.ano} as ano, ${mesActualObj.mes} as mes, vendedor, cantidad_vendida, monto_neto 
                 FROM ventas_actuales 
@@ -492,15 +496,15 @@ async function getVentasTendencias(req, res) {
             dateFilterSql += ` AND p.sku LIKE '${marca.toUpperCase()}%' `;
         }
 
-        // UNION Subquery strategy
+        // UNION Subquery strategy (excluye mes actual de históricas para evitar doble conteo)
         const ventasTableSql = `
             (
                 SELECT producto_id, ano, mes, vendedor, cantidad_vendida, monto_neto 
                 FROM ventas_mensuales
+                WHERE NOT (ano = ${mesActualObj.ano} AND mes = ${mesActualObj.mes})
                 UNION ALL
                 SELECT producto_id, ${mesActualObj.ano} as ano, ${mesActualObj.mes} as mes, vendedor, cantidad_vendida, monto_neto 
                 FROM ventas_actuales 
-
                 -- WHERE monto_neto > 0 (Standardizing to Net Sales)
             )
         `;

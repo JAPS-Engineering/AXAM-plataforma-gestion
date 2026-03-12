@@ -72,13 +72,16 @@ export interface DashboardResponse {
 }
 
 // API Functions
-export async function fetchDashboard(meses: number, marca?: string, frequency: 'MONTHLY' | 'WEEKLY' = 'MONTHLY'): Promise<DashboardResponse> {
+export async function fetchDashboard(meses: number, marca?: string, frequency: 'MONTHLY' | 'WEEKLY' = 'MONTHLY', listaId?: string): Promise<DashboardResponse> {
     const params = new URLSearchParams({
         meses: meses.toString(),
         frequency
     });
     if (marca) {
         params.append("marca", marca);
+    }
+    if (listaId && listaId !== 'all') {
+        params.append("listaId", listaId);
     }
     const { data } = await api.get<DashboardResponse>(`/dashboard?${params}`);
     return data;
