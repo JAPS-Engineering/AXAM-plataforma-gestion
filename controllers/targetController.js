@@ -90,9 +90,11 @@ async function getVentasPorVendedor(req, res) {
         const futureMonthsArray = generateMonthsRangeArray(mesActual.ano, mesActual.mes, futureEndYear, futureEndMonth);
 
         // Cláusula para rango Histórico (Ventas)
+        // IMPORTANTE: Excluir el mes actual — esos datos vienen de ventaActual para evitar doble conteo
         const historicalDateClause = [
             { OR: [{ ano: { gt: startYear } }, { ano: startYear, mes: { gte: startMonth } }] },
-            { OR: [{ ano: { lt: endYear } }, { ano: endYear, mes: { lte: endMonth } }] }
+            { OR: [{ ano: { lt: endYear } }, { ano: endYear, mes: { lte: endMonth } }] },
+            { NOT: { ano: mesActual.ano, mes: mesActual.mes } }
         ];
 
         // Cláusula extendida para Objetivos (Todo el historial + Futuro)
@@ -191,6 +193,8 @@ async function getVentasPorVendedor(req, res) {
             WHERE 
                 (vm.ano * 12 + vm.mes) >= ${startIdx}
                 AND (vm.ano * 12 + vm.mes) <= ${endIdx}
+                -- Excluir mes actual: ya se suma desde ventas_actuales abajo
+                AND NOT (vm.ano = ${mesActual.ano} AND vm.mes = ${mesActual.mes})
             GROUP BY vm.vendedor, p.familia
         `;
 
